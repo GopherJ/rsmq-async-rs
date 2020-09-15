@@ -245,9 +245,9 @@ impl Rsmq {
     pub async fn create_queue(
         &mut self,
         qname: &str,
-        seconds_hidden: Option<u32>,
-        delay: Option<u32>,
-        maxsize: Option<i32>,
+        seconds_hidden: Option<u64>,
+        delay: Option<u64>,
+        maxsize: Option<i64>,
     ) -> Result<(), RsmqError> {
         valid_name_format(qname)?;
 
@@ -405,7 +405,7 @@ impl Rsmq {
         Ok(RsmqQueueAttributes {
             vt: *result.0.get(0).unwrap_or(&0),
             delay: *result.0.get(1).unwrap_or(&0),
-            maxsize: *result.0.get(2).unwrap_or(&0),
+            maxsize: *result.0.get(2).unwrap_or(&0) as i64,
             totalrecv: *result.0.get(3).unwrap_or(&0),
             totalsent: *result.0.get(4).unwrap_or(&0),
             created: *result.0.get(5).unwrap_or(&0),
@@ -506,7 +506,7 @@ impl Rsmq {
 
         number_in_range(delay, 0, 9_999_999)?;
 
-        if message.len() as u64 > queue.maxsize {
+        if message.len() as i64 > queue.maxsize {
             return Err(RsmqError::MessageTooLong);
         }
 
