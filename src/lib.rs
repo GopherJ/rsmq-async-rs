@@ -97,7 +97,7 @@ use rand::seq::IteratorRandom;
 struct QueueDescriptor {
     vt: u64,
     delay: u64,
-    maxsize: u64,
+    maxsize: i64,
     ts: u64,
     uid: Option<String>,
 }
@@ -155,7 +155,7 @@ pub struct RsmqQueueAttributes {
     /// How many second will take until the message is delivered to a client since it was sent
     pub delay: u64,
     /// Max size of the message in bytes in the queue
-    pub maxsize: u64,
+    pub maxsize: i64,
     /// Number of messages received by the queue
     pub totalrecv: u64,
     /// Number of messages sent by the queue
