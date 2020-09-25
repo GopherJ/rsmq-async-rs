@@ -82,6 +82,7 @@
 #![forbid(unsafe_code)]
 
 mod error;
+
 pub use error::RsmqError;
 
 use bb8_redis::{
@@ -92,6 +93,8 @@ use bb8_redis::{
 use lazy_static::lazy_static;
 use radix_fmt::radix_36;
 use rand::seq::IteratorRandom;
+
+use std::borrow::Cow;
 
 #[derive(Debug)]
 struct QueueDescriptor {
@@ -113,6 +116,8 @@ pub struct RsmqOptions {
     pub db: u8,
     /// If true, it will use redis pubsub to notify clients about new messages. More info in the general crate description
     pub realtime: bool,
+    /// Redis username
+    pub username: Option<String>,
     /// Redis password
     pub password: Option<String>,
     /// RSMQ namespace (you can have several. "rsmq" by default)
@@ -126,6 +131,7 @@ impl Default for RsmqOptions {
             port: "6379".to_string(),
             db: 0,
             realtime: false,
+            username: None,
             password: None,
             ns: "rsmq".to_string(),
         }
@@ -188,15 +194,17 @@ pub struct Rsmq {
 impl Rsmq {
     /// Creates a new RSMQ instance, including its connection
     pub async fn new(options: RsmqOptions) -> Result<Rsmq, RsmqError> {
-        let password = if let Some(ref password) = options.password {
-            format!("redis:{}@", password)
+        let auth: Cow<'_, str> = if let (Some(username), Some(password)) =
+            (options.username.as_ref(), options.password.as_ref())
+        {
+            format!("{}:{}@", username, password).into()
         } else {
-            "".to_string()
+            "".into()
         };
 
         let url = format!(
             "redis://{}{}:{}/{}",
-            password, options.host, options.port, options.db
+            auth, options.host, options.port, options.db
         );
 
         let manager = RedisConnectionManager::new(url)?;

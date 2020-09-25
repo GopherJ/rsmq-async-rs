@@ -252,3 +252,34 @@ async fn send_receiving_hidden_30s_message() {
 
     rsmq.delete_queue("queue7").await.unwrap();
 }
+
+#[tokio::test]
+async fn send_receiving_hidden_15s_message() {
+    let mut rsmq = Rsmq::new(RsmqOptions {
+        db: 7,
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+
+    rsmq.create_queue("queue8", Some(15), None, Some(-1))
+        .await
+        .unwrap();
+
+    rsmq.send_message("queue8", "testmessage", None)
+        .await
+        .unwrap();
+
+    let message = rsmq.receive_message("queue8", None).await.unwrap();
+    assert!(message.is_some());
+
+    delay_for(Duration::from_secs(14)).await;
+    let message = rsmq.receive_message("queue8", None).await.unwrap();
+    assert!(message.is_none());
+
+    delay_for(Duration::from_secs(2)).await;
+    let message = rsmq.receive_message("queue8", None).await.unwrap();
+    assert!(message.is_some());
+
+    rsmq.delete_queue("queue8").await.unwrap();
+}
