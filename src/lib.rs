@@ -259,9 +259,6 @@ impl Rsmq {
     ) -> Result<(), RsmqError> {
         valid_name_format(qname)?;
 
-        let mut conn = self.pool.get().await?;
-        let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
-
         let key = format!("{}{}:Q", self.options.ns, qname);
         let seconds_hidden = seconds_hidden.unwrap_or(30);
         let delay = delay.unwrap_or(0);
@@ -269,12 +266,12 @@ impl Rsmq {
 
         number_in_range(seconds_hidden, 0, 9_999_999)?;
         number_in_range(delay, 0, 9_999_999)?;
-        if let Err(error) = number_in_range(maxsize, 1024, 65536) {
-            if maxsize != -1 {
-                // TODO: Create another error in order to explain that -1 is allowed
-                return Err(error);
-            }
+        if maxsize != -1 {
+            number_in_range(maxsize, 1024, 65536)?;
         }
+
+        let mut conn = self.pool.get().await?;
+        let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
 
         let time: (u64, u64) = redis::cmd("TIME").query_async(conn).await?;
 
@@ -605,12 +602,10 @@ impl Rsmq {
             }
 
             if let Some(maxsize) = maxsize {
-                if let Err(error) = number_in_range(maxsize, 1024, 65536) {
-                    if maxsize != -1 {
-                        // TODO: Create another error in order to explain that -1 is allowed
-                        return Err(error);
-                    }
+                if maxsize != -1 {
+                    number_in_range(maxsize, 1024, 65536)?;
                 }
+
                 commands = commands
                     .cmd("HSET")
                     .arg(&queue_name)
