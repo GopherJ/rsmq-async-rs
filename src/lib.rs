@@ -237,11 +237,11 @@ impl Rsmq {
 
     /// Creates a new queue. Attributes can be later modified with "set_queue_attributes" method
     ///
-    /// seconds_hidden: Time the messages will be hidden when they are received with the "receive_message" method.
+    /// seconds_hidden: Time the messages will be hidden when they are received with the "receive_message" method. Default: 30 seconds
     ///
-    /// delay: Time the messages will be delayed before being delivered
+    /// delay: Time the messages will be delayed before being delivered. Default: 0
     ///
-    /// maxsize: Maximum size in bytes of each message in the queue. Needs to be between 1024 or 65536 or -1 (unlimited size)
+    /// maxsize: Maximum size in bytes of each message in the queue. Needs to be between 1024 or 65536 or -1 (unlimited size). Default: 65536
     pub async fn create_queue(
         &mut self,
         qname: &str,

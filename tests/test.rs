@@ -1,4 +1,7 @@
 use rsmq_async::{Rsmq, RsmqError, RsmqOptions};
+use tokio::time::delay_for;
+
+use std::time::Duration;
 
 #[tokio::test]
 async fn send_receiving_deleting_message() {
@@ -217,4 +220,35 @@ async fn change_message_visibility() {
     assert_eq!(message_id, message.unwrap().id);
 
     rsmq.delete_queue("queue6").await.unwrap();
+}
+
+#[tokio::test]
+async fn send_receiving_hidden_30s_message() {
+    let mut rsmq = Rsmq::new(RsmqOptions {
+        db: 6,
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+
+    rsmq.create_queue("queue7", None, None, Some(-1))
+        .await
+        .unwrap();
+
+    rsmq.send_message("queue7", "testmessage", None)
+        .await
+        .unwrap();
+
+    let message = rsmq.receive_message("queue7", None).await.unwrap();
+    assert!(message.is_some());
+
+    delay_for(Duration::from_secs(29)).await;
+    let message = rsmq.receive_message("queue7", None).await.unwrap();
+    assert!(message.is_none());
+
+    delay_for(Duration::from_secs(2)).await;
+    let message = rsmq.receive_message("queue7", None).await.unwrap();
+    assert!(message.is_some());
+
+    rsmq.delete_queue("queue7").await.unwrap();
 }
