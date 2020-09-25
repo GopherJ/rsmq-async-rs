@@ -506,7 +506,7 @@ impl Rsmq {
 
         number_in_range(delay, 0, 9_999_999)?;
 
-        if message.len() as i64 > queue.maxsize {
+        if queue.maxsize != -1 && message.as_bytes().len() as i64 > queue.maxsize {
             return Err(RsmqError::MessageTooLong);
         }
 
