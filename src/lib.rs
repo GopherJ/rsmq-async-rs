@@ -470,22 +470,22 @@ where
         let mut conn = self.pool.get().await?;
         let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
 
-        let result: (bool, String, String, u64, u64) = POP_MESSAGE
+        let results: (bool, String, String, u64, u64) = POP_MESSAGE
             .key(format!("{}{}", self.options.ns, qname))
             .key(queue.ts)
             .invoke_async(conn)
             .await?;
 
-        if !result.0 {
+        if !results.0 {
             return Ok(None);
         }
 
         Ok(Some(RsmqMessage {
-            id: result.1.clone(),
-            message: serde_json::from_str::<T>(&result.2)?,
-            rc: result.3,
-            fr: result.4,
-            sent: u64::from_str_radix(&result.1[0..10], 36).unwrap_or(0),
+            id: results.1.clone(),
+            message: serde_json::from_str::<T>(&results.2)?,
+            rc: results.3,
+            fr: results.4,
+            sent: u64::from_str_radix(&results.1[0..10], 36).unwrap_or(0),
         }))
     }
 
@@ -504,23 +504,23 @@ where
 
         number_in_range(seconds_hidden, 0, 9_999_999_000)?;
 
-        let result: (bool, String, String, u64, u64) = RECEIVE_MESSAGE
+        let results: (bool, String, String, u64, u64) = RECEIVE_MESSAGE
             .key(format!("{}{}", self.options.ns, qname))
             .key(queue.ts)
             .key(queue.ts + seconds_hidden)
             .invoke_async(conn)
             .await?;
 
-        if !result.0 {
+        if !results.0 {
             return Ok(None);
         }
 
         Ok(Some(RsmqMessage {
-            id: result.1.clone(),
-            message: serde_json::from_str::<T>(&result.2)?,
-            rc: result.3,
-            fr: result.4,
-            sent: u64::from_str_radix(&result.1[0..10], 36).unwrap_or(0),
+            id: results.1.clone(),
+            message: serde_json::from_str::<T>(&results.2)?,
+            rc: results.3,
+            fr: results.4,
+            sent: u64::from_str_radix(&results.1[0..10], 36).unwrap_or(0),
         }))
     }
 
