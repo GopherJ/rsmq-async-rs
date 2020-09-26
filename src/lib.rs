@@ -83,7 +83,7 @@
 
 mod error;
 
-pub use error::RsmqError;
+pub use error::{RsmqError, RsmqResult};
 
 use bb8_redis::{
     bb8,
@@ -193,13 +193,11 @@ pub struct Rsmq {
 
 impl Rsmq {
     /// Creates a new RSMQ instance, including its connection
-    pub async fn new(options: RsmqOptions) -> Result<Rsmq, RsmqError> {
-        let auth: Cow<'_, str> = if let (Some(username), Some(password)) =
-            (options.username.as_ref(), options.password.as_ref())
-        {
-            format!("{}:{}@", username, password).into()
-        } else {
-            "".into()
+    pub async fn new(options: RsmqOptions) -> RsmqResult<Rsmq> {
+        let auth: Cow<'_, str> = match (options.username.as_ref(), options.password.as_ref()) {
+            (Some(username), Some(password)) => format!("{}:{}@", username, password).into(),
+            (None, Some(password)) => format!("redis:{}@", password).into(),
+            _ => "".into(),
         };
 
         let url = format!(
@@ -219,30 +217,6 @@ impl Rsmq {
         Rsmq { pool, options }
     }
 
-    /// Change the hidden time of a already sent message.
-    pub async fn change_message_visibility(
-        &mut self,
-        qname: &str,
-        message_id: &str,
-        seconds_hidden: u64,
-    ) -> Result<(), RsmqError> {
-        let queue = self.get_queue(qname, false).await?;
-
-        let mut conn = self.pool.get().await?;
-        let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
-
-        number_in_range(seconds_hidden, 0, 9_999_999)?;
-
-        CHANGE_MESSAGE_VISIVILITY
-            .key(format!("{}{}", self.options.ns, qname))
-            .key(message_id)
-            .key(queue.ts + seconds_hidden * 1000)
-            .invoke_async::<_, bool>(conn)
-            .await?;
-
-        Ok(())
-    }
-
     /// Creates a new queue. Attributes can be later modified with "set_queue_attributes" method
     ///
     /// seconds_hidden: Time the messages will be hidden when they are received with the "receive_message" method. Default: 30 seconds
@@ -256,7 +230,7 @@ impl Rsmq {
         seconds_hidden: Option<u64>,
         delay: Option<u64>,
         maxsize: Option<i64>,
-    ) -> Result<(), RsmqError> {
+    ) -> RsmqResult<()> {
         valid_name_format(qname)?;
 
         let key = format!("{}{}:Q", self.options.ns, qname);
@@ -273,9 +247,20 @@ impl Rsmq {
         let mut conn = self.pool.get().await?;
         let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
 
+        // rsmq nodejs uses HSETNX vt <seconds_hidden>'s result to decide if
+        // queue already exists, but I think SADD is better and cleaner
+        if !redis::cmd("SADD")
+            .arg(format!("{}QUEUES", self.options.ns))
+            .arg(qname)
+            .query_async(conn)
+            .await?
+        {
+            return Err(RsmqError::QueueExists);
+        }
+
         let time: (u64, u64) = redis::cmd("TIME").query_async(conn).await?;
 
-        let results: Vec<bool> = pipe()
+        pipe()
             .cmd("HSETNX")
             .arg(&key)
             .arg("vt")
@@ -307,23 +292,57 @@ impl Rsmq {
             .query_async(conn)
             .await?;
 
-        if !results[0] {
-            return Err(RsmqError::QueueExists);
-        }
+        Ok(())
+    }
 
-        redis::cmd("SADD")
+    /// Deletes the queue and all the messages on it
+    pub async fn delete_queue(&mut self, qname: &str) -> RsmqResult<()> {
+        let mut conn = self.pool.get().await?;
+        let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
+
+        let key = format!("{}{}", self.options.ns, qname);
+
+        // DEL  <namespace><qname>:Q <namespace><qname>
+        // SREM <namespace>QUEUES
+        let results: (u16, u16) = pipe()
+            .cmd("DEL")
+            .arg(format!("{}:Q", &key))
+            .arg(key)
+            .cmd("SREM")
             .arg(format!("{}QUEUES", self.options.ns))
             .arg(qname)
             .query_async(conn)
             .await?;
 
+        if results.1 == 0 {
+            return Err(RsmqError::QueueNotFound);
+        }
+
         Ok(())
+    }
+
+    /// Return true if queue: <qname> already exists
+    pub async fn has_queue(&mut self, qname: &str) -> RsmqResult<bool> {
+        Ok(self.list_queues().await?.iter().any(|q| q == qname))
+    }
+
+    /// Returns a list of queues in the namespace
+    pub async fn list_queues(&mut self) -> RsmqResult<Vec<String>> {
+        let mut conn = self.pool.get().await?;
+        let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
+
+        let queues = redis::cmd("SMEMBERS")
+            .arg(format!("{}QUEUES", self.options.ns))
+            .query_async::<_, Vec<String>>(conn)
+            .await?;
+
+        Ok(queues)
     }
 
     /// Deletes a message from the queue.
     ///
     /// Important to use when you are using receive_message.
-    pub async fn delete_message(&mut self, qname: &str, id: &str) -> Result<bool, RsmqError> {
+    pub async fn delete_message(&mut self, qname: &str, id: &str) -> RsmqResult<bool> {
         let mut conn = self.pool.get().await?;
         let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
 
@@ -348,35 +367,32 @@ impl Rsmq {
         Ok(false)
     }
 
-    /// Deletes the queue and all the messages on it
-    pub async fn delete_queue(&mut self, qname: &str) -> Result<(), RsmqError> {
+    /// Change the hidden time of a already sent message.
+    pub async fn change_message_visibility(
+        &mut self,
+        qname: &str,
+        message_id: &str,
+        seconds_hidden: u64,
+    ) -> RsmqResult<()> {
+        let queue = self.get_queue(qname, false).await?;
+
         let mut conn = self.pool.get().await?;
         let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
 
-        let key = format!("{}{}", self.options.ns, qname);
+        number_in_range(seconds_hidden, 0, 9_999_999)?;
 
-        let results: (u16, u16) = pipe()
-            .cmd("DEL")
-            .arg(format!("{}:Q", &key))
-            .arg(key)
-            .cmd("SREM")
-            .arg(format!("{}QUEUES", self.options.ns))
-            .arg(qname)
-            .query_async(conn)
+        CHANGE_MESSAGE_VISIVILITY
+            .key(format!("{}{}", self.options.ns, qname))
+            .key(message_id)
+            .key(queue.ts + seconds_hidden * 1000)
+            .invoke_async::<_, bool>(conn)
             .await?;
-
-        if results.0 == 0 {
-            return Err(RsmqError::QueueNotFound);
-        }
 
         Ok(())
     }
 
     /// Returns the queue attributes and statistics
-    pub async fn get_queue_attributes(
-        &mut self,
-        qname: &str,
-    ) -> Result<RsmqQueueAttributes, RsmqError> {
+    pub async fn get_queue_attributes(&mut self, qname: &str) -> RsmqResult<RsmqQueueAttributes> {
         let mut conn = self.pool.get().await?;
         let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
 
@@ -420,21 +436,8 @@ impl Rsmq {
         })
     }
 
-    /// Returns a list of queues in the namespace
-    pub async fn list_queues(&mut self) -> Result<Vec<String>, RsmqError> {
-        let mut conn = self.pool.get().await?;
-        let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
-
-        let queues = redis::cmd("SMEMBERS")
-            .arg(format!("{}QUEUES", self.options.ns))
-            .query_async::<_, Vec<String>>(conn)
-            .await?;
-
-        Ok(queues)
-    }
-
     /// Deletes and returns a message. Be aware that using this you may end with deleted & unprocessed messages.
-    pub async fn pop_message(&mut self, qname: &str) -> Result<Option<RsmqMessage>, RsmqError> {
+    pub async fn pop_message(&mut self, qname: &str) -> RsmqResult<Option<RsmqMessage>> {
         let queue = self.get_queue(qname, false).await?;
 
         let mut conn = self.pool.get().await?;
@@ -464,7 +467,7 @@ impl Rsmq {
         &mut self,
         qname: &str,
         seconds_hidden: Option<u64>,
-    ) -> Result<Option<RsmqMessage>, RsmqError> {
+    ) -> RsmqResult<Option<RsmqMessage>> {
         let queue = self.get_queue(qname, false).await?;
 
         let mut conn = self.pool.get().await?;
@@ -500,7 +503,7 @@ impl Rsmq {
         qname: &str,
         message: &str,
         delay: Option<u64>,
-    ) -> Result<String, RsmqError> {
+    ) -> RsmqResult<String> {
         let queue = self.get_queue(qname, true).await?;
 
         let mut conn = self.pool.get().await?;
@@ -564,7 +567,7 @@ impl Rsmq {
         seconds_hidden: Option<u64>,
         delay: Option<u64>,
         maxsize: Option<i64>,
-    ) -> Result<RsmqQueueAttributes, RsmqError> {
+    ) -> RsmqResult<RsmqQueueAttributes> {
         self.get_queue(qname, false).await?;
 
         {
@@ -619,7 +622,7 @@ impl Rsmq {
         self.get_queue_attributes(qname).await
     }
 
-    async fn get_queue(&mut self, qname: &str, uid: bool) -> Result<QueueDescriptor, RsmqError> {
+    async fn get_queue(&mut self, qname: &str, uid: bool) -> RsmqResult<QueueDescriptor> {
         let mut conn = self.pool.get().await?;
         let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
 

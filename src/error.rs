@@ -1,6 +1,7 @@
 use bb8_redis::{bb8::RunError, redis::RedisError};
 use thiserror::Error as ThisError;
 
+/// RsmqError
 #[derive(ThisError, Debug)]
 pub enum RsmqError {
     #[error("Redis error: `{0:?}`")]
@@ -26,3 +27,6 @@ pub enum RsmqError {
     #[error("Queue already exists")]
     QueueExists,
 }
+
+/// RsmqResult
+pub type RsmqResult<T> = Result<T, RsmqError>;
