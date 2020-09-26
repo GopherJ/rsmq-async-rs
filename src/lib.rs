@@ -140,8 +140,8 @@ impl Default for RsmqOptions {
 }
 
 /// A new RSMQ message. You will get this when using pop_message or receive_message methods
-#[derive(Debug)]
-pub struct RsmqMessage<T: Serialize + DeserializeOwned> {
+#[derive(Debug, Clone)]
+pub struct RsmqMessage<T: Serialize + DeserializeOwned + Clone> {
     /// Message id. Used later for change_message_visibility and delete_message
     pub id: String,
     /// Message content. It is wrapped in an string. If you are sending other format (JSON, etc) you will need to decode the message in your code
@@ -187,7 +187,7 @@ lazy_static! {
 
 /// THe main object of this library. Creates/Handles the redis connection and contains all the methods
 #[derive(Debug, Clone)]
-pub struct Rsmq<T: Serialize + DeserializeOwned> {
+pub struct Rsmq<T: Serialize + DeserializeOwned + Clone> {
     pool: RedisPool,
     options: RsmqOptions,
     _marker: PhantomData<T>,
@@ -195,7 +195,7 @@ pub struct Rsmq<T: Serialize + DeserializeOwned> {
 
 impl<T> Rsmq<T>
 where
-    T: Serialize + DeserializeOwned,
+    T: Serialize + DeserializeOwned + Clone,
 {
     /// Creates a new RSMQ instance, including its connection
     pub async fn new(options: RsmqOptions) -> RsmqResult<Rsmq<T>> {
