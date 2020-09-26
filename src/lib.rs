@@ -87,7 +87,7 @@ pub use error::{RsmqError, RsmqResult};
 
 use bb8_redis::{
     bb8,
-    redis::{self, pipe, Script},
+    redis::{cmd, pipe, Script},
     RedisConnectionManager, RedisPool,
 };
 use lazy_static::lazy_static;
@@ -247,20 +247,13 @@ impl Rsmq {
         let mut conn = self.pool.get().await?;
         let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
 
-        // rsmq nodejs uses HSETNX vt <seconds_hidden>'s result to decide if
-        // queue already exists, but I think SADD is better and cleaner
-        if !redis::cmd("SADD")
+        let time: (u64, u64) = cmd("TIME").query_async(conn).await?;
+
+        let results: Vec<u64> = pipe()
+            .atomic()
+            .cmd("SADD")
             .arg(format!("{}QUEUES", self.options.ns))
             .arg(qname)
-            .query_async(conn)
-            .await?
-        {
-            return Err(RsmqError::QueueExists);
-        }
-
-        let time: (u64, u64) = redis::cmd("TIME").query_async(conn).await?;
-
-        pipe()
             .cmd("HSETNX")
             .arg(&key)
             .arg("vt")
@@ -292,6 +285,10 @@ impl Rsmq {
             .query_async(conn)
             .await?;
 
+        if results[0] != 1 {
+            return Err(RsmqError::QueueExists);
+        }
+
         Ok(())
     }
 
@@ -305,16 +302,17 @@ impl Rsmq {
         // DEL  <namespace><qname>:Q <namespace><qname>
         // SREM <namespace>QUEUES
         let results: (u16, u16) = pipe()
-            .cmd("DEL")
-            .arg(format!("{}:Q", &key))
-            .arg(key)
+            .atomic()
             .cmd("SREM")
             .arg(format!("{}QUEUES", self.options.ns))
             .arg(qname)
+            .cmd("DEL")
+            .arg(format!("{}:Q", &key))
+            .arg(key)
             .query_async(conn)
             .await?;
 
-        if results.1 == 0 {
+        if results.0 != 1 {
             return Err(RsmqError::QueueNotFound);
         }
 
@@ -331,12 +329,70 @@ impl Rsmq {
         let mut conn = self.pool.get().await?;
         let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
 
-        let queues = redis::cmd("SMEMBERS")
+        let queues = cmd("SMEMBERS")
             .arg(format!("{}QUEUES", self.options.ns))
             .query_async::<_, Vec<String>>(conn)
             .await?;
 
         Ok(queues)
+    }
+
+    /// Sends a message to the queue. The message will be delayed some time (controlled by the "delayed" argument or the queue settings) before being delivered to a client.
+    pub async fn send_message(
+        &mut self,
+        qname: &str,
+        message: &str,
+        delay: Option<u64>,
+    ) -> RsmqResult<String> {
+        let queue = self.get_queue(qname, true).await?;
+
+        let mut conn = self.pool.get().await?;
+        let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
+
+        let delay = delay.unwrap_or(queue.delay) * 1000;
+        let key = format!("{}{}", self.options.ns, qname);
+
+        number_in_range(delay, 0, 9_999_999)?;
+
+        if queue.maxsize != -1 && message.as_bytes().len() as i64 > queue.maxsize {
+            return Err(RsmqError::MessageTooLong);
+        }
+
+        let queue_uid = queue.uid.unwrap();
+        let queue_key = format!("{}:Q", key);
+
+        let mut pipeline = pipe();
+
+        let mut commands = pipeline
+            .atomic()
+            .cmd("ZADD")
+            .arg(&key)
+            .arg(queue.ts + delay)
+            .arg(&queue_uid)
+            .cmd("HSET")
+            .arg(&queue_key)
+            .arg(&queue_uid)
+            .arg(message)
+            .cmd("HINCRBY")
+            .arg(&queue_key)
+            .arg("totalsent")
+            .arg(1_u64);
+
+        if self.options.realtime {
+            commands = commands.cmd("ZCARD").arg(&key);
+        }
+
+        let results: Vec<u64> = commands.query_async(conn).await?;
+
+        if self.options.realtime {
+            cmd("PUBLISH")
+                .arg(format!("{}rt:{}", self.options.ns, qname))
+                .arg(results[3])
+                .query_async::<_, Vec<String>>(conn)
+                .await?;
+        }
+
+        Ok(queue_uid)
     }
 
     /// Deletes a message from the queue.
@@ -349,6 +405,7 @@ impl Rsmq {
         let key = format!("{}{}", self.options.ns, qname);
 
         let results: (u16, u16) = pipe()
+            .atomic()
             .cmd("ZREM")
             .arg(&key)
             .arg(id)
@@ -398,7 +455,7 @@ impl Rsmq {
 
         let key = format!("{}{}", self.options.ns, qname);
 
-        let time: (u64, u64) = redis::cmd("TIME").query_async(conn).await?;
+        let time: (u64, u64) = cmd("TIME").query_async(conn).await?;
 
         let result: (Vec<u64>, u64, u64) = pipe()
             .cmd("HMGET")
@@ -497,63 +554,6 @@ impl Rsmq {
         }))
     }
 
-    /// Sends a message to the queue. The message will be delayed some time (controlled by the "delayed" argument or the queue settings) before being delivered to a client.
-    pub async fn send_message(
-        &mut self,
-        qname: &str,
-        message: &str,
-        delay: Option<u64>,
-    ) -> RsmqResult<String> {
-        let queue = self.get_queue(qname, true).await?;
-
-        let mut conn = self.pool.get().await?;
-        let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
-
-        let delay = delay.unwrap_or(queue.delay) * 1000;
-        let key = format!("{}{}", self.options.ns, qname);
-
-        number_in_range(delay, 0, 9_999_999)?;
-
-        if queue.maxsize != -1 && message.as_bytes().len() as i64 > queue.maxsize {
-            return Err(RsmqError::MessageTooLong);
-        }
-
-        let queue_uid = queue.uid.unwrap();
-        let queue_key = format!("{}:Q", key);
-
-        let mut piping = pipe();
-
-        let mut commands = piping
-            .cmd("ZADD")
-            .arg(&key)
-            .arg(queue.ts + delay)
-            .arg(&queue_uid)
-            .cmd("HSET")
-            .arg(&queue_key)
-            .arg(&queue_uid)
-            .arg(message)
-            .cmd("HINCRBY")
-            .arg(&queue_key)
-            .arg("totalsent")
-            .arg(1_u64);
-
-        if self.options.realtime {
-            commands = commands.cmd("ZCARD").arg(&key);
-        }
-
-        let result: Vec<i64> = commands.query_async(conn).await?;
-
-        if self.options.realtime {
-            redis::cmd("PUBLISH")
-                .arg(format!("{}rt:{}", self.options.ns, qname))
-                .arg(result[3])
-                .query_async::<_, Vec<String>>(conn)
-                .await?;
-        }
-
-        Ok(queue_uid)
-    }
-
     /// Modify the queue attributes. Keep in mind that "seconds_hidden" and "delay" can be overwritten when the message is sent. "seconds_hidden" can be changed by the method "change_message_visibility"
     ///
     /// seconds_hidden: Time the messages will be hidden when they are received with the "receive_message" method.
@@ -576,7 +576,7 @@ impl Rsmq {
 
             let queue_name = format!("{}{}:Q", self.options.ns, qname);
 
-            let time: (u64, u64) = redis::cmd("TIME").query_async(conn).await?;
+            let time: (u64, u64) = cmd("TIME").query_async(conn).await?;
 
             let mut commands = &mut pipe();
 
@@ -681,7 +681,7 @@ fn number_in_range<T: std::cmp::PartialOrd + std::fmt::Display>(
     value: T,
     min: T,
     max: T,
-) -> Result<(), RsmqError> {
+) -> RsmqResult<()> {
     if value >= min && value <= max {
         Ok(())
     } else {
@@ -693,7 +693,7 @@ fn number_in_range<T: std::cmp::PartialOrd + std::fmt::Display>(
     }
 }
 
-fn valid_name_format(name: &str) -> Result<(), RsmqError> {
+fn valid_name_format(name: &str) -> RsmqResult<()> {
     if name.is_empty() && name.len() > 160 {
         return Err(RsmqError::InvalidFormat(name.to_string()));
     } else {
