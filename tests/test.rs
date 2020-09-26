@@ -7,12 +7,15 @@ use std::time::Duration;
 async fn send_receiving_deleting_message() {
     let mut rsmq = Rsmq::<String>::new(RsmqOptions {
         db: 0,
+        realtime: true,
         ..Default::default()
     })
     .await
     .unwrap();
 
     rsmq.create_queue("queue1", None, None, None).await.unwrap();
+
+    assert!(rsmq.has_queue("queue1").await.unwrap());
 
     rsmq.send_message("queue1", &"testmessage".to_string(), None)
         .await

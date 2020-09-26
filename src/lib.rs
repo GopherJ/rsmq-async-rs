@@ -22,13 +22,13 @@
 //!
 //! When [initializing](#initialize) RSMQ you can enable the realtime PUBLISH for
 //! new messages. On every new message that gets sent to RSQM via `sendMessage` a
-//! Redis PUBLISH will be issued to `{rsmq.ns}:rt:{qname}`.
+//! Redis PUBLISH will be issued to `{rsmq.ns}rt:{qname}`.
 //!
 //! Example for RSMQ with default settings:
 //!
 //! * The queue `testQueue` already contains 5 messages.
 //! * A new message is being sent to the queue `testQueue`.
-//! * The following Redis command will be issued: `PUBLISH rsmq:rt:testQueue 6`
+//! * The following Redis command will be issued: `PUBLISH rsmqrt:testQueue 6`
 //!
 //! ### How to use the realtime option
 //!
@@ -330,7 +330,14 @@ where
 
     /// Return true if queue: <qname> already exists
     pub async fn has_queue(&mut self, qname: &str) -> RsmqResult<bool> {
-        Ok(self.list_queues().await?.iter().any(|q| q == qname))
+        let mut conn = self.pool.get().await?;
+        let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
+
+        Ok(cmd("SISMEMBER")
+            .arg(format!("{}QUEUES", self.options.ns))
+            .arg(qname)
+            .query_async(conn)
+            .await?)
     }
 
     /// Returns a list of queues in the namespace
@@ -338,12 +345,10 @@ where
         let mut conn = self.pool.get().await?;
         let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
 
-        let queues = cmd("SMEMBERS")
+        Ok(cmd("SMEMBERS")
             .arg(format!("{}QUEUES", self.options.ns))
-            .query_async::<_, Vec<String>>(conn)
-            .await?;
-
-        Ok(queues)
+            .query_async(conn)
+            .await?)
     }
 
     /// Sends a message to the queue. The message will be delayed some time (controlled by the "delayed" argument or the queue settings) before being delivered to a client.
@@ -398,7 +403,7 @@ where
             cmd("PUBLISH")
                 .arg(format!("{}rt:{}", self.options.ns, qname))
                 .arg(results[3])
-                .query_async::<_, Vec<String>>(conn)
+                .query_async(conn)
                 .await?;
         }
 
