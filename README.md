@@ -22,7 +22,7 @@ use rsmq_async::Rsmq;
 
 #[tokio::main]
 async fn main() {
-    let mut rsmq = Rsmq::new(Default::default())
+    let mut rsmq = Rsmq::<String>::new(Default::default())
         .await
         .expect("connection failed");
 
@@ -30,7 +30,7 @@ async fn main() {
         .await
         .expect("failed to create queue");
 
-    rsmq.send_message("myqueue", "testmessage", None)
+    rsmq.send_message("myqueue", &"testmessage".to_string(), None)
         .await
         .expect("failed to send message");
 

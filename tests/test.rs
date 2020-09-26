@@ -5,7 +5,7 @@ use std::time::Duration;
 
 #[tokio::test]
 async fn send_receiving_deleting_message() {
-    let mut rsmq = Rsmq::new(RsmqOptions {
+    let mut rsmq = Rsmq::<String>::new(RsmqOptions {
         db: 0,
         ..Default::default()
     })
@@ -14,7 +14,7 @@ async fn send_receiving_deleting_message() {
 
     rsmq.create_queue("queue1", None, None, None).await.unwrap();
 
-    rsmq.send_message("queue1", "testmessage", None)
+    rsmq.send_message("queue1", &"testmessage".to_string(), None)
         .await
         .unwrap();
 
@@ -35,7 +35,7 @@ async fn send_receiving_deleting_message() {
 
 #[tokio::test]
 async fn pop_message() {
-    let mut rsmq = Rsmq::new(RsmqOptions {
+    let mut rsmq = Rsmq::<String>::new(RsmqOptions {
         db: 1,
         ..Default::default()
     })
@@ -44,7 +44,7 @@ async fn pop_message() {
 
     rsmq.create_queue("queue2", None, None, None).await.unwrap();
 
-    rsmq.send_message("queue2", "testmessage", None)
+    rsmq.send_message("queue2", &"testmessage".to_string(), None)
         .await
         .unwrap();
 
@@ -65,7 +65,7 @@ async fn pop_message() {
 
 #[tokio::test]
 async fn creating_queue() {
-    let mut rsmq = Rsmq::new(RsmqOptions {
+    let mut rsmq = Rsmq::<String>::new(RsmqOptions {
         db: 2,
         ..Default::default()
     })
@@ -92,7 +92,7 @@ async fn creating_queue() {
 
 #[tokio::test]
 async fn updating_queue() {
-    let mut rsmq = Rsmq::new(RsmqOptions {
+    let mut rsmq = Rsmq::<String>::new(RsmqOptions {
         db: 3,
         ..Default::default()
     })
@@ -134,7 +134,7 @@ async fn updating_queue() {
 
 #[tokio::test]
 async fn deleting_queue() {
-    let mut rsmq = Rsmq::new(RsmqOptions {
+    let mut rsmq = Rsmq::<String>::new(RsmqOptions {
         db: 4,
         ..Default::default()
     })
@@ -186,7 +186,7 @@ async fn deleting_queue() {
 
 #[tokio::test]
 async fn change_message_visibility() {
-    let mut rsmq = Rsmq::new(RsmqOptions {
+    let mut rsmq = Rsmq::<String>::new(RsmqOptions {
         db: 5,
         ..Default::default()
     })
@@ -195,7 +195,7 @@ async fn change_message_visibility() {
 
     rsmq.create_queue("queue6", None, None, None).await.unwrap();
 
-    rsmq.send_message("queue6", "testmessage", None)
+    rsmq.send_message("queue6", &"testmessage".to_string(), None)
         .await
         .unwrap();
 
@@ -224,7 +224,7 @@ async fn change_message_visibility() {
 
 #[tokio::test]
 async fn send_receiving_hidden_30s_message() {
-    let mut rsmq = Rsmq::new(RsmqOptions {
+    let mut rsmq = Rsmq::<String>::new(RsmqOptions {
         db: 6,
         ..Default::default()
     })
@@ -235,7 +235,7 @@ async fn send_receiving_hidden_30s_message() {
         .await
         .unwrap();
 
-    rsmq.send_message("queue7", "testmessage", None)
+    rsmq.send_message("queue7", &"testmessage".to_string(), None)
         .await
         .unwrap();
 
@@ -255,7 +255,7 @@ async fn send_receiving_hidden_30s_message() {
 
 #[tokio::test]
 async fn send_receiving_hidden_15s_message() {
-    let mut rsmq = Rsmq::new(RsmqOptions {
+    let mut rsmq = Rsmq::<String>::new(RsmqOptions {
         db: 7,
         ..Default::default()
     })
@@ -266,7 +266,7 @@ async fn send_receiving_hidden_15s_message() {
         .await
         .unwrap();
 
-    rsmq.send_message("queue8", "testmessage", None)
+    rsmq.send_message("queue8", &"testmessage".to_string(), None)
         .await
         .unwrap();
 

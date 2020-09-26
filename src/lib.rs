@@ -5,7 +5,7 @@
 //! use rsmq_async::{Rsmq, RsmqError};
 //!
 //! # async fn it_works() -> Result<(), RsmqError> {
-//! let mut rsmq = Rsmq::new(Default::default()).await?;
+//! let mut rsmq = Rsmq::<String>::new(Default::default()).await?;
 //!
 //! let message = rsmq.receive_message("myqueue", None).await?;
 //!
@@ -49,7 +49,7 @@
 //!
 //! # #[tokio::main] //You can use Tokio or Async-std
 //! # async fn main() {
-//!     let mut rsmq = Rsmq::new(Default::default())
+//!     let mut rsmq = Rsmq::<String>::new(Default::default())
 //!         .await
 //!         .expect("connection failed");
 //!
@@ -57,7 +57,7 @@
 //!         .await
 //!         .expect("failed to create queue");
 //!
-//!     rsmq.send_message("myqueue", "testmessage", None)
+//!     rsmq.send_message("myqueue", &"testmessage".to_string(), None)
 //!         .await
 //!         .expect("failed to send message");
 //!
@@ -93,9 +93,9 @@ use bb8_redis::{
 use lazy_static::lazy_static;
 use radix_fmt::radix_36;
 use rand::seq::IteratorRandom;
-use serde::de::DeserializeOwned;
+use serde::{de::DeserializeOwned, ser::Serialize};
 
-use std::borrow::Cow;
+use std::{borrow::Cow, marker::PhantomData};
 
 #[derive(Debug)]
 struct QueueDescriptor {
@@ -141,7 +141,7 @@ impl Default for RsmqOptions {
 
 /// A new RSMQ message. You will get this when using pop_message or receive_message methods
 #[derive(Debug)]
-pub struct RsmqMessage<T: DeserializeOwned> {
+pub struct RsmqMessage<T: Serialize + DeserializeOwned> {
     /// Message id. Used later for change_message_visibility and delete_message
     pub id: String,
     /// Message content. It is wrapped in an string. If you are sending other format (JSON, etc) you will need to decode the message in your code
@@ -187,14 +187,18 @@ lazy_static! {
 
 /// THe main object of this library. Creates/Handles the redis connection and contains all the methods
 #[derive(Debug, Clone)]
-pub struct Rsmq {
+pub struct Rsmq<T: Serialize + DeserializeOwned> {
     pool: RedisPool,
     options: RsmqOptions,
+    _marker: PhantomData<T>,
 }
 
-impl Rsmq {
+impl<T> Rsmq<T>
+where
+    T: Serialize + DeserializeOwned,
+{
     /// Creates a new RSMQ instance, including its connection
-    pub async fn new(options: RsmqOptions) -> RsmqResult<Rsmq> {
+    pub async fn new(options: RsmqOptions) -> RsmqResult<Rsmq<T>> {
         let auth: Cow<'_, str> = match (options.username.as_ref(), options.password.as_ref()) {
             (Some(username), Some(password)) => format!("{}:{}@", username, password).into(),
             (None, Some(password)) => format!("redis:{}@", password).into(),
@@ -214,8 +218,12 @@ impl Rsmq {
     }
 
     /// Special method for when you already have a redis-rs connection and you don't want redis_async to create a new one.
-    pub fn new_with_pool(options: RsmqOptions, pool: RedisPool) -> Rsmq {
-        Rsmq { pool, options }
+    pub fn new_with_pool(options: RsmqOptions, pool: RedisPool) -> Rsmq<T> {
+        Rsmq {
+            pool,
+            options,
+            _marker: PhantomData,
+        }
     }
 
     /// Creates a new queue. Attributes can be later modified with "set_queue_attributes" method
@@ -342,7 +350,7 @@ impl Rsmq {
     pub async fn send_message(
         &mut self,
         qname: &str,
-        message: &str,
+        message: &T,
         delay: Option<u64>,
     ) -> RsmqResult<String> {
         let queue = self.get_queue(qname, true).await?;
@@ -355,6 +363,7 @@ impl Rsmq {
 
         number_in_range(delay, 0, 9_999_999)?;
 
+        let message = serde_json::to_string(message)?;
         if queue.maxsize != -1 && message.as_bytes().len() as i64 > queue.maxsize {
             return Err(RsmqError::MessageTooLong);
         }
@@ -450,10 +459,7 @@ impl Rsmq {
     }
 
     /// Deletes and returns a message. Be aware that using this you may end with deleted & unprocessed messages.
-    pub async fn pop_message<T: DeserializeOwned>(
-        &mut self,
-        qname: &str,
-    ) -> RsmqResult<Option<RsmqMessage<T>>> {
+    pub async fn pop_message(&mut self, qname: &str) -> RsmqResult<Option<RsmqMessage<T>>> {
         let queue = self.get_queue(qname, false).await?;
 
         let mut conn = self.pool.get().await?;
@@ -479,7 +485,7 @@ impl Rsmq {
     }
 
     /// Returns a message. The message stays hidden for some time (defined by "seconds_hidden" argument or the queue settings). After that time, the message will be redelivered. In order to avoid the redelivery, you need to use the "dekete_message" after this function.
-    pub async fn receive_message<T: DeserializeOwned>(
+    pub async fn receive_message(
         &mut self,
         qname: &str,
         seconds_hidden: Option<u64>,
@@ -652,7 +658,7 @@ impl Rsmq {
         let ts = time_seconds * 1000 + time_microseconds / 1000;
 
         let quid = if uid {
-            Some(radix_36(ts).to_string() + &Rsmq::make_id(22))
+            Some(radix_36(ts).to_string() + &Rsmq::<T>::make_id(22))
         } else {
             None
         };
