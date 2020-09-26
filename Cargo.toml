@@ -16,6 +16,8 @@ rand = "0.7"
 radix_fmt = "1.0"
 bb8-redis = "0.5.0"
 thiserror = "1.0.20"
+serde = { version = "1.0.116" }
+serde_json = { version = "1.0.57" }
 
 [dev-dependencies]
 net2 = "0.2.33"

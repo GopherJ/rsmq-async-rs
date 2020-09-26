@@ -93,6 +93,7 @@ use bb8_redis::{
 use lazy_static::lazy_static;
 use radix_fmt::radix_36;
 use rand::seq::IteratorRandom;
+use serde::de::DeserializeOwned;
 
 use std::borrow::Cow;
 
@@ -139,12 +140,12 @@ impl Default for RsmqOptions {
 }
 
 /// A new RSMQ message. You will get this when using pop_message or receive_message methods
-#[derive(Debug, Clone)]
-pub struct RsmqMessage {
+#[derive(Debug)]
+pub struct RsmqMessage<T: DeserializeOwned> {
     /// Message id. Used later for change_message_visibility and delete_message
     pub id: String,
     /// Message content. It is wrapped in an string. If you are sending other format (JSON, etc) you will need to decode the message in your code
-    pub message: String,
+    pub message: T,
     /// Number of times the message was received by a client
     pub rc: u64,
     /// Timestamp (epoch in seconds) of when was this message received
@@ -448,6 +449,138 @@ impl Rsmq {
         Ok(())
     }
 
+    /// Deletes and returns a message. Be aware that using this you may end with deleted & unprocessed messages.
+    pub async fn pop_message<T: DeserializeOwned>(
+        &mut self,
+        qname: &str,
+    ) -> RsmqResult<Option<RsmqMessage<T>>> {
+        let queue = self.get_queue(qname, false).await?;
+
+        let mut conn = self.pool.get().await?;
+        let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
+
+        let result: (bool, String, String, u64, u64) = POP_MESSAGE
+            .key(format!("{}{}", self.options.ns, qname))
+            .key(queue.ts)
+            .invoke_async(conn)
+            .await?;
+
+        if !result.0 {
+            return Ok(None);
+        }
+
+        Ok(Some(RsmqMessage {
+            id: result.1.clone(),
+            message: serde_json::from_str::<T>(&result.2)?,
+            rc: result.3,
+            fr: result.4,
+            sent: u64::from_str_radix(&result.1[0..10], 36).unwrap_or(0),
+        }))
+    }
+
+    /// Returns a message. The message stays hidden for some time (defined by "seconds_hidden" argument or the queue settings). After that time, the message will be redelivered. In order to avoid the redelivery, you need to use the "dekete_message" after this function.
+    pub async fn receive_message<T: DeserializeOwned>(
+        &mut self,
+        qname: &str,
+        seconds_hidden: Option<u64>,
+    ) -> RsmqResult<Option<RsmqMessage<T>>> {
+        let queue = self.get_queue(qname, false).await?;
+
+        let mut conn = self.pool.get().await?;
+        let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
+
+        let seconds_hidden = seconds_hidden.unwrap_or(queue.vt) * 1000;
+
+        number_in_range(seconds_hidden, 0, 9_999_999_000)?;
+
+        let result: (bool, String, String, u64, u64) = RECEIVE_MESSAGE
+            .key(format!("{}{}", self.options.ns, qname))
+            .key(queue.ts)
+            .key(queue.ts + seconds_hidden)
+            .invoke_async(conn)
+            .await?;
+
+        if !result.0 {
+            return Ok(None);
+        }
+
+        Ok(Some(RsmqMessage {
+            id: result.1.clone(),
+            message: serde_json::from_str::<T>(&result.2)?,
+            rc: result.3,
+            fr: result.4,
+            sent: u64::from_str_radix(&result.1[0..10], 36).unwrap_or(0),
+        }))
+    }
+
+    /// Modify the queue attributes. Keep in mind that "seconds_hidden" and "delay" can be overwritten when the message is sent. "seconds_hidden" can be changed by the method "change_message_visibility"
+    ///
+    /// seconds_hidden: Time the messages will be hidden when they are received with the "receive_message" method.
+    ///
+    /// delay: Time the messages will be delayed before being delivered
+    ///
+    /// maxsize: Maximum size in bytes of each message in the queue. Needs to be between 1024 or 65536 or -1 (unlimited size)
+    pub async fn set_queue_attributes(
+        &mut self,
+        qname: &str,
+        seconds_hidden: Option<u64>,
+        delay: Option<u64>,
+        maxsize: Option<i64>,
+    ) -> RsmqResult<RsmqQueueAttributes> {
+        self.get_queue(qname, false).await?;
+
+        {
+            let mut conn = self.pool.get().await?;
+            let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
+
+            let queue_name = format!("{}{}:Q", self.options.ns, qname);
+
+            let time: (u64, u64) = cmd("TIME").query_async(conn).await?;
+
+            let mut commands = &mut pipe();
+
+            commands = commands
+                .atomic()
+                .cmd("HSET")
+                .arg(&queue_name)
+                .arg("modified")
+                .arg(time.0);
+
+            if let Some(duration) = seconds_hidden {
+                number_in_range(duration, 0, 9_999_999)?;
+                commands = commands
+                    .cmd("HSET")
+                    .arg(&queue_name)
+                    .arg("vt")
+                    .arg(duration);
+            }
+
+            if let Some(delay) = delay {
+                number_in_range(delay, 0, 9_999_999)?;
+                commands = commands
+                    .cmd("HSET")
+                    .arg(&queue_name)
+                    .arg("delay")
+                    .arg(delay);
+            }
+
+            if let Some(maxsize) = maxsize {
+                if maxsize != -1 {
+                    number_in_range(maxsize, 1024, 65536)?;
+                }
+                commands = commands
+                    .cmd("HSET")
+                    .arg(&queue_name)
+                    .arg("maxsize")
+                    .arg(maxsize);
+            }
+
+            commands.query_async(conn).await?;
+        }
+
+        self.get_queue_attributes(qname).await
+    }
+
     /// Returns the queue attributes and statistics
     pub async fn get_queue_attributes(&mut self, qname: &str) -> RsmqResult<RsmqQueueAttributes> {
         let mut conn = self.pool.get().await?;
@@ -491,135 +624,6 @@ impl Rsmq {
             msgs: result.1,
             hiddenmsgs: result.2,
         })
-    }
-
-    /// Deletes and returns a message. Be aware that using this you may end with deleted & unprocessed messages.
-    pub async fn pop_message(&mut self, qname: &str) -> RsmqResult<Option<RsmqMessage>> {
-        let queue = self.get_queue(qname, false).await?;
-
-        let mut conn = self.pool.get().await?;
-        let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
-
-        let result: (bool, String, String, u64, u64) = POP_MESSAGE
-            .key(format!("{}{}", self.options.ns, qname))
-            .key(queue.ts)
-            .invoke_async(conn)
-            .await?;
-
-        if !result.0 {
-            return Ok(None);
-        }
-
-        Ok(Some(RsmqMessage {
-            id: result.1.clone(),
-            message: result.2,
-            rc: result.3,
-            fr: result.4,
-            sent: u64::from_str_radix(&result.1[0..10], 36).unwrap_or(0),
-        }))
-    }
-
-    /// Returns a message. The message stays hidden for some time (defined by "seconds_hidden" argument or the queue settings). After that time, the message will be redelivered. In order to avoid the redelivery, you need to use the "dekete_message" after this function.
-    pub async fn receive_message(
-        &mut self,
-        qname: &str,
-        seconds_hidden: Option<u64>,
-    ) -> RsmqResult<Option<RsmqMessage>> {
-        let queue = self.get_queue(qname, false).await?;
-
-        let mut conn = self.pool.get().await?;
-        let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
-
-        let seconds_hidden = seconds_hidden.unwrap_or(queue.vt) * 1000;
-
-        number_in_range(seconds_hidden, 0, 9_999_999_000)?;
-
-        let result: (bool, String, String, u64, u64) = RECEIVE_MESSAGE
-            .key(format!("{}{}", self.options.ns, qname))
-            .key(queue.ts)
-            .key(queue.ts + seconds_hidden)
-            .invoke_async(conn)
-            .await?;
-
-        if !result.0 {
-            return Ok(None);
-        }
-
-        Ok(Some(RsmqMessage {
-            id: result.1.clone(),
-            message: result.2,
-            rc: result.3,
-            fr: result.4,
-            sent: u64::from_str_radix(&result.1[0..10], 36).unwrap_or(0),
-        }))
-    }
-
-    /// Modify the queue attributes. Keep in mind that "seconds_hidden" and "delay" can be overwritten when the message is sent. "seconds_hidden" can be changed by the method "change_message_visibility"
-    ///
-    /// seconds_hidden: Time the messages will be hidden when they are received with the "receive_message" method.
-    ///
-    /// delay: Time the messages will be delayed before being delivered
-    ///
-    /// maxsize: Maximum size in bytes of each message in the queue. Needs to be between 1024 or 65536 or -1 (unlimited size)
-    pub async fn set_queue_attributes(
-        &mut self,
-        qname: &str,
-        seconds_hidden: Option<u64>,
-        delay: Option<u64>,
-        maxsize: Option<i64>,
-    ) -> RsmqResult<RsmqQueueAttributes> {
-        self.get_queue(qname, false).await?;
-
-        {
-            let mut conn = self.pool.get().await?;
-            let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
-
-            let queue_name = format!("{}{}:Q", self.options.ns, qname);
-
-            let time: (u64, u64) = cmd("TIME").query_async(conn).await?;
-
-            let mut commands = &mut pipe();
-
-            commands = commands
-                .cmd("HSET")
-                .arg(&queue_name)
-                .arg("modified")
-                .arg(time.0);
-
-            if let Some(duration) = seconds_hidden {
-                number_in_range(duration, 0, 9_999_999)?;
-                commands = commands
-                    .cmd("HSET")
-                    .arg(&queue_name)
-                    .arg("vt")
-                    .arg(duration);
-            }
-
-            if let Some(delay) = delay {
-                number_in_range(delay, 0, 9_999_999)?;
-                commands = commands
-                    .cmd("HSET")
-                    .arg(&queue_name)
-                    .arg("delay")
-                    .arg(delay);
-            }
-
-            if let Some(maxsize) = maxsize {
-                if maxsize != -1 {
-                    number_in_range(maxsize, 1024, 65536)?;
-                }
-
-                commands = commands
-                    .cmd("HSET")
-                    .arg(&queue_name)
-                    .arg("maxsize")
-                    .arg(maxsize);
-            }
-
-            commands.query_async(conn).await?;
-        }
-
-        self.get_queue_attributes(qname).await
     }
 
     async fn get_queue(&mut self, qname: &str, uid: bool) -> RsmqResult<QueueDescriptor> {
@@ -670,7 +674,12 @@ impl Rsmq {
         let mut id = String::with_capacity(len);
 
         for _ in 0..len {
-            id.push(possible.chars().choose(&mut rng).unwrap());
+            id.push(
+                possible
+                    .chars()
+                    .choose(&mut rng)
+                    .expect("failed to choose character"),
+            );
         }
 
         id

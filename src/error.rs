@@ -1,4 +1,5 @@
 use bb8_redis::{bb8::RunError, redis::RedisError};
+use serde_json::error::Error as SerializeJsonError;
 use thiserror::Error as ThisError;
 
 /// RsmqError
@@ -26,6 +27,8 @@ pub enum RsmqError {
     QueueNotFound,
     #[error("Queue already exists")]
     QueueExists,
+    #[error("Serialize Json Error: `{0:?}`")]
+    SerializeJsonError(#[from] SerializeJsonError),
 }
 
 /// RsmqResult
