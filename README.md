@@ -4,11 +4,11 @@ RSMQ port to async rust. RSMQ is a simple redis queue system that works in any r
 
 This crate uses async in the implementation. If you want to use it in your sync code you can use tokio "block_on" method. Async was used in order to simplify the code and allow 1-to-1 port oft he JS code.
 
-[![Crates.io](https://img.shields.io/crates/v/rsmq_async)](https://crates.io/crates/rsmq_async) [![Crates.io](https://img.shields.io/crates/l/rsmq_async)](https://choosealicense.com/licenses/mit/) [![dependency status](https://deps.rs/crate/rsmq_async/2.1.0/status.svg)](https://deps.rs/crate/rsmq_async)
+[![Crates.io](https://img.shields.io/crates/v/rsmq_async_lite)](https://crates.io/crates/rsmq_async_lite) [![Crates.io](https://img.shields.io/crates/l/rsmq_async_lite)](https://choosealicense.com/licenses/mit/) [![dependency status](https://deps.rs/crate/rsmq_async_lite/2.3.0/status.svg)](https://deps.rs/crate/rsmq_async_lite)
 
 ## Installation
 
-Check [https://crates.io/crates/rsmq_async](https://crates.io/crates/rsmq_async)
+Check [https://crates.io/crates/rsmq_async_lite](https://crates.io/crates/rsmq_async_lite)
 
 ## Async executor
 
@@ -18,7 +18,7 @@ Since version 0.16 [where this pull request was merged](https://github.com/mitsu
 ## Example
 
 ```rust
-use rsmq_async::Rsmq;
+use rsmq_async_lite::Rsmq;
 
 #[tokio::main]
 async fn main() {

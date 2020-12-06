@@ -2,7 +2,7 @@
 //! It is a 1-to-1 conversion using async.
 //!
 //! ```rust,no_run
-//! use rsmq_async::{Rsmq, RsmqError};
+//! use rsmq_async_lite::{Rsmq, RsmqError};
 //!
 //! # async fn it_works() -> Result<(), RsmqError> {
 //! let mut rsmq = Rsmq::<String>::new(Default::default()).await?;
@@ -45,7 +45,7 @@
 //! processed, delete it with "delete_message".
 //!
 //! ```rust,no_run
-//! use rsmq_async::Rsmq;
+//! use rsmq_async_lite::Rsmq;
 //!
 //! # #[tokio::main] //You can use Tokio or Async-std
 //! # async fn main() {

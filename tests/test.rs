@@ -1,5 +1,5 @@
-use rsmq_async::{Rsmq, RsmqError, RsmqOptions};
-use tokio::time::delay_for;
+use rsmq_async_lite::{Rsmq, RsmqError, RsmqOptions};
+use tokio::time::sleep;
 
 use std::time::Duration;
 
@@ -245,11 +245,11 @@ async fn send_receiving_hidden_30s_message() {
     let message = rsmq.receive_message("queue7", None).await.unwrap();
     assert!(message.is_some());
 
-    delay_for(Duration::from_secs(29)).await;
+    sleep(Duration::from_secs(29)).await;
     let message = rsmq.receive_message("queue7", None).await.unwrap();
     assert!(message.is_none());
 
-    delay_for(Duration::from_secs(2)).await;
+    sleep(Duration::from_secs(2)).await;
     let message = rsmq.receive_message("queue7", None).await.unwrap();
     assert!(message.is_some());
 
@@ -276,11 +276,11 @@ async fn send_receiving_hidden_15s_message() {
     let message = rsmq.receive_message("queue8", None).await.unwrap();
     assert!(message.is_some());
 
-    delay_for(Duration::from_secs(14)).await;
+    sleep(Duration::from_secs(14)).await;
     let message = rsmq.receive_message("queue8", None).await.unwrap();
     assert!(message.is_none());
 
-    delay_for(Duration::from_secs(2)).await;
+    sleep(Duration::from_secs(2)).await;
     let message = rsmq.receive_message("queue8", None).await.unwrap();
     assert!(message.is_some());
 

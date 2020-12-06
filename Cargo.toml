@@ -11,7 +11,7 @@ license       = "MIT"
 name          = "rsmq_async_lite"
 readme        = "README.md"
 repository    = "https://github.com/Couragium/rsmq-async-rs"
-version       = "2.2.0"
+version       = "2.3.0"
 
 [dependencies]
 bb8-redis   = "0.7.0"
@@ -27,5 +27,5 @@ net2  = "0.2.36"
 redis = "0.18.0"
 
     [dev-dependencies.tokio]
-    features = ["rt-threaded", "macros"]
-    version  = "0.2.11"
+    features = ["rt-multi-thread", "macros", "time", "test-util"]
+    version  = "0.3.5"
