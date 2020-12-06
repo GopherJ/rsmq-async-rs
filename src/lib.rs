@@ -88,7 +88,7 @@ pub use error::{RsmqError, RsmqResult};
 use bb8_redis::{
     bb8,
     redis::{cmd, pipe, Script},
-    RedisConnectionManager, RedisPool,
+    RedisConnectionManager,
 };
 use lazy_static::lazy_static;
 use radix_fmt::radix_36;
@@ -188,7 +188,7 @@ lazy_static! {
 /// THe main object of this library. Creates/Handles the redis connection and contains all the methods
 #[derive(Debug, Clone)]
 pub struct Rsmq<T: Serialize + DeserializeOwned + Clone> {
-    pool: RedisPool,
+    pool: bb8::Pool<RedisConnectionManager>,
     options: RsmqOptions,
     _marker: PhantomData<T>,
 }
@@ -212,13 +212,13 @@ where
 
         let manager = RedisConnectionManager::new(url)?;
 
-        let pool = RedisPool::new(bb8::Pool::builder().build(manager).await?);
+        let pool = bb8::Pool::builder().build(manager).await?;
 
         Ok(Rsmq::new_with_pool(options, pool))
     }
 
     /// Special method for when you already have a redis-rs connection and you don't want redis_async to create a new one.
-    pub fn new_with_pool(options: RsmqOptions, pool: RedisPool) -> Rsmq<T> {
+    pub fn new_with_pool(options: RsmqOptions, pool: bb8::Pool<RedisConnectionManager>) -> Rsmq<T> {
         Rsmq {
             pool,
             options,
@@ -254,9 +254,8 @@ where
         }
 
         let mut conn = self.pool.get().await?;
-        let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
 
-        let time: (u64, u64) = cmd("TIME").query_async(conn).await?;
+        let time: (u64, u64) = cmd("TIME").query_async(&mut *conn).await?;
 
         let results: Vec<u64> = pipe()
             .atomic()
@@ -291,7 +290,7 @@ where
             .arg(&key)
             .arg("totalsent")
             .arg(0_i32)
-            .query_async(conn)
+            .query_async(&mut *conn)
             .await?;
 
         if results[0] != 1 {
@@ -304,7 +303,6 @@ where
     /// Deletes the queue and all the messages on it
     pub async fn delete_queue(&mut self, qname: &str) -> RsmqResult<()> {
         let mut conn = self.pool.get().await?;
-        let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
 
         let key = format!("{}{}", self.options.ns, qname);
 
@@ -318,7 +316,7 @@ where
             .cmd("DEL")
             .arg(format!("{}:Q", &key))
             .arg(key)
-            .query_async(conn)
+            .query_async(&mut *conn)
             .await?;
 
         if results.0 != 1 {
@@ -331,23 +329,21 @@ where
     /// Return true if queue: <qname> already exists
     pub async fn has_queue(&mut self, qname: &str) -> RsmqResult<bool> {
         let mut conn = self.pool.get().await?;
-        let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
 
         Ok(cmd("SISMEMBER")
             .arg(format!("{}QUEUES", self.options.ns))
             .arg(qname)
-            .query_async(conn)
+            .query_async(&mut *conn)
             .await?)
     }
 
     /// Returns a list of queues in the namespace
     pub async fn list_queues(&mut self) -> RsmqResult<Vec<String>> {
         let mut conn = self.pool.get().await?;
-        let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
 
         Ok(cmd("SMEMBERS")
             .arg(format!("{}QUEUES", self.options.ns))
-            .query_async(conn)
+            .query_async(&mut *conn)
             .await?)
     }
 
@@ -361,7 +357,6 @@ where
         let queue = self.get_queue(qname, true).await?;
 
         let mut conn = self.pool.get().await?;
-        let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
 
         let delay = delay.unwrap_or(queue.delay) * 1000;
         let key = format!("{}{}", self.options.ns, qname);
@@ -397,13 +392,13 @@ where
             commands = commands.cmd("ZCARD").arg(&key);
         }
 
-        let results: Vec<u64> = commands.query_async(conn).await?;
+        let results: Vec<u64> = commands.query_async(&mut *conn).await?;
 
         if self.options.realtime {
             cmd("PUBLISH")
                 .arg(format!("{}rt:{}", self.options.ns, qname))
                 .arg(results[3])
-                .query_async(conn)
+                .query_async(&mut *conn)
                 .await?;
         }
 
@@ -415,7 +410,6 @@ where
     /// Important to use when you are using receive_message.
     pub async fn delete_message(&mut self, qname: &str, id: &str) -> RsmqResult<bool> {
         let mut conn = self.pool.get().await?;
-        let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
 
         let key = format!("{}{}", self.options.ns, qname);
 
@@ -429,7 +423,7 @@ where
             .arg(id)
             .arg(format!("{}:rc", id))
             .arg(format!("{}:fr", id))
-            .query_async(conn)
+            .query_async(&mut *conn)
             .await?;
 
         if results.0 == 1 && results.1 > 0 {
@@ -449,7 +443,6 @@ where
         let queue = self.get_queue(qname, false).await?;
 
         let mut conn = self.pool.get().await?;
-        let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
 
         number_in_range(seconds_hidden, 0, 9_999_999)?;
 
@@ -457,7 +450,7 @@ where
             .key(format!("{}{}", self.options.ns, qname))
             .key(message_id)
             .key(queue.ts + seconds_hidden * 1000)
-            .invoke_async::<_, bool>(conn)
+            .invoke_async::<_, bool>(&mut *conn)
             .await?;
 
         Ok(())
@@ -468,12 +461,11 @@ where
         let queue = self.get_queue(qname, false).await?;
 
         let mut conn = self.pool.get().await?;
-        let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
 
         let results: (bool, String, String, u64, u64) = POP_MESSAGE
             .key(format!("{}{}", self.options.ns, qname))
             .key(queue.ts)
-            .invoke_async(conn)
+            .invoke_async(&mut *conn)
             .await?;
 
         if !results.0 {
@@ -498,7 +490,6 @@ where
         let queue = self.get_queue(qname, false).await?;
 
         let mut conn = self.pool.get().await?;
-        let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
 
         let seconds_hidden = seconds_hidden.unwrap_or(queue.vt) * 1000;
 
@@ -508,7 +499,7 @@ where
             .key(format!("{}{}", self.options.ns, qname))
             .key(queue.ts)
             .key(queue.ts + seconds_hidden)
-            .invoke_async(conn)
+            .invoke_async(&mut *conn)
             .await?;
 
         if !results.0 {
@@ -542,11 +533,10 @@ where
 
         {
             let mut conn = self.pool.get().await?;
-            let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
 
             let queue_name = format!("{}{}:Q", self.options.ns, qname);
 
-            let time: (u64, u64) = cmd("TIME").query_async(conn).await?;
+            let time: (u64, u64) = cmd("TIME").query_async(&mut *conn).await?;
 
             let mut commands = &mut pipe();
 
@@ -586,7 +576,7 @@ where
                     .arg(maxsize);
             }
 
-            commands.query_async(conn).await?;
+            commands.query_async(&mut *conn).await?;
         }
 
         self.get_queue_attributes(qname).await
@@ -595,11 +585,10 @@ where
     /// Returns the queue attributes and statistics
     pub async fn get_queue_attributes(&mut self, qname: &str) -> RsmqResult<RsmqQueueAttributes> {
         let mut conn = self.pool.get().await?;
-        let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
 
         let key = format!("{}{}", self.options.ns, qname);
 
-        let time: (u64, u64) = cmd("TIME").query_async(conn).await?;
+        let time: (u64, u64) = cmd("TIME").query_async(&mut *conn).await?;
 
         let result: (Vec<u64>, u64, u64) = pipe()
             .cmd("HMGET")
@@ -617,7 +606,7 @@ where
             .arg(&key)
             .arg(time.0 * 1000)
             .arg("+inf")
-            .query_async(conn)
+            .query_async(&mut *conn)
             .await?;
 
         if result.0.is_empty() {
@@ -639,7 +628,6 @@ where
 
     async fn get_queue(&mut self, qname: &str, uid: bool) -> RsmqResult<QueueDescriptor> {
         let mut conn = self.pool.get().await?;
-        let conn = conn.as_mut().ok_or(RsmqError::NoConnectionAcquired)?;
 
         let result: (Vec<String>, (u64, u64)) = pipe()
             .cmd("HMGET")
@@ -648,7 +636,7 @@ where
             .arg("delay")
             .arg("maxsize")
             .cmd("TIME")
-            .query_async(conn)
+            .query_async(&mut *conn)
             .await?;
 
         let time_seconds = (result.1).0;
