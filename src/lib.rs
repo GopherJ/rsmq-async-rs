@@ -87,9 +87,10 @@ pub use error::{RsmqError, RsmqResult};
 
 use bb8_redis::{
     bb8,
-    redis::{cmd, pipe, Script},
+    redis::{cmd, pipe},
     RedisConnectionManager,
 };
+use redis::Script;
 use lazy_static::lazy_static;
 use radix_fmt::radix_36;
 use rand::seq::IteratorRandom;

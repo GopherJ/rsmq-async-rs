@@ -1,31 +1,32 @@
 [package]
-authors       = [
-    "David Bonet <webbonet@gmail.com>",
-    "Cheng JIANG <alex_cj96@foxmail.com>",
+authors = [
+  "David Bonet <webbonet@gmail.com>",
+  "Cheng JIANG <alex_cj96@foxmail.com>",
 ]
-description   = "Async RSMQ port to rust. RSMQ is a simple redis queue system that works in any redis v2.4+. It contains the same methods as the original one in https://github.com/smrchy/rsmq"
+description = "Async RSMQ port to rust. RSMQ is a simple redis queue system that works in any redis v2.4+. It contains the same methods as the original one in https://github.com/smrchy/rsmq"
 documentation = "https://docs.rs/rsmq_async/"
-edition       = "2018"
-homepage      = "https://crates.io/crates/rsmq_async"
-license       = "MIT"
-name          = "rsmq_async_lite"
-readme        = "README.md"
-repository    = "https://github.com/Couragium/rsmq-async-rs"
-version       = "2.3.0"
+edition = "2018"
+homepage = "https://crates.io/crates/rsmq_async"
+license = "MIT"
+name = "rsmq_async_lite"
+readme = "README.md"
+repository = "https://github.com/Couragium/rsmq-async-rs"
+version = "3.0.0"
 
 [dependencies]
-bb8-redis   = "0.7.0"
+bb8-redis   = "0.15.0"
 lazy_static = "1.4"
 radix_fmt   = "1.0"
-rand        = "0.7"
+rand        = "0.8.5"
+redis       = { version = "0.25", default-features = false, features = ["aio", "script", "tokio-comp"] }
 serde       = { version = "1.0.116" }
 serde_json  = { version = "1.0.57" }
 thiserror   = "1.0.20"
 
 [dev-dependencies]
-net2  = "0.2.36"
-redis = "0.18.0"
+net2  = "0.2.39"
+redis = "0.25.0"
 
-    [dev-dependencies.tokio]
-    features = ["rt-multi-thread", "macros", "time", "test-util"]
-    version  = "0.3.5"
+[dev-dependencies.tokio]
+features = ["full"]
+version  = "1.37.0"
