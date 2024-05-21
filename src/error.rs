@@ -1,4 +1,4 @@
-use bb8::RunError;
+use r2d2::Error as RunError;
 use redis::RedisError;
 use thiserror::Error as ThisError;
 
@@ -10,7 +10,7 @@ pub type RsmqResult<T> = Result<T, RsmqError>;
 #[derive(ThisError, Debug, PartialEq)]
 pub enum RsmqError {
     #[error("Pool run error: `{0:?}`")]
-    RunError(#[from] RunError<RedisError>),
+    RunError(#[from] RunError),
     #[error("Redis error: `{0:?}`")]
     RedisError(#[from] RedisError),
     #[error("No connection acquired`")]

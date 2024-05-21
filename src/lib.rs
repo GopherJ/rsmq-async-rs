@@ -3,21 +3,21 @@
 //! RSMQ port to async rust. RSMQ is a simple redis queue system that works in any redis v2.6+. It contains the same
 //! methods as the original one in [https://github.com/smrchy/rsmq](https://github.com/smrchy/rsmq)
 //!
-//! [![Crates.io](https://img.shields.io/crates/v/rsmq_async)](https://crates.io/crates/rsmq_async)
-//! [![Crates.io](https://img.shields.io/crates/l/rsmq_async)](https://choosealicense.com/licenses/mit/)
-//! [![dependency status](https://deps.rs/crate/rsmq_async/4.0.0/status.svg)](https://deps.rs/crate/rsmq_async)
-//! [![Docs](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square)](https://docs.rs/rsmq_async)
+//! [![Crates.io](https://img.shields.io/crates/v/rsmq)](https://crates.io/crates/rsmq)
+//! [![Crates.io](https://img.shields.io/crates/l/rsmq)](https://choosealicense.com/licenses/mit/)
+//! [![dependency status](https://deps.rs/crate/rsmq/4.0.0/status.svg)](https://deps.rs/crate/rsmq)
+//! [![Docs](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square)](https://docs.rs/rsmq)
 //!
 //! ## Example
 //!
 //! ```rust
-//! # use rsmq_async::RsmqError; use rsmq_async::{Rsmq, RsmqConnection};
+//! # use rsmq::RsmqError; use rsmq::{Rsmq, RsmqConnection};
 //!
-//! # async fn it_works() -> Result<(), RsmqError> { let mut rsmq = Rsmq::new(Default::default()).await?;
+//! # async fn it_works() -> Result<(), RsmqError> { let mut rsmq = Rsmq::new(Default::default())?;
 //!
-//! let message = rsmq.receive_message::<String>("myqueue", None).await?;
+//! let message = rsmq.receive_message::<String>("myqueue", None)?;
 //!
-//! if let Some(message) = message { rsmq.delete_message("myqueue", &message.id).await?; }
+//! if let Some(message) = message { rsmq.delete_message("myqueue", &message.id)?; }
 //!
 //! # Ok(())
 //! # }
@@ -30,32 +30,28 @@
 //!
 //! ## Installation
 //!
-//! Check [https://crates.io/crates/rsmq_async](https://crates.io/crates/rsmq_async)
+//! Check [https://crates.io/crates/rsmq](https://crates.io/crates/rsmq)
 //!
 //! ## Example
 //!
 //! ```rust
 //!
-//! use rsmq_async::{Rsmq, RsmqConnection};
+//! use rsmq::{Rsmq, RsmqConnection};
 //!
 //! async fn it_works() { let mut rsmq = Rsmq::new(Default::default())
-//!         .await
 //!         .expect("connection failed");
 //!
 //!     rsmq.create_queue("myqueue", None, None, None)
-//!         .await
 //!         .expect("failed to create queue");
 //!
 //!     rsmq.send_message("myqueue", "testmessage", None)
-//!         .await
 //!         .expect("failed to send message");
 //!
 //!     let message = rsmq
 //!         .receive_message::<String>("myqueue", None)
-//!         .await
 //!         .expect("cannot receive message");
 //!
-//!     if let Some(message) = message { rsmq.delete_message("myqueue", &message.id).await; } }
+//!     if let Some(message) = message { rsmq.delete_message("myqueue", &message.id); } }
 //!
 //! ```
 //!
@@ -91,7 +87,7 @@
 //!
 //! ```toml
 //!
-//! rsmq_async = { version = "9", default-features = false, features = ["tokio-comp"] }
+//! rsmq = { version = "9", default-features = false, features = ["tokio-comp"] }
 //!
 //! ```
 //!

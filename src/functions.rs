@@ -7,7 +7,7 @@ use core::convert::TryFrom;
 use lazy_static::lazy_static;
 use radix_fmt::radix_36;
 use rand::seq::IteratorRandom;
-use redis::{aio::ConnectionLike, pipe, Script};
+use redis::{ConnectionLike, pipe, Script};
 use std::convert::TryInto;
 use std::time::Duration;
 
@@ -37,25 +37,18 @@ impl<T: ConnectionLike> std::fmt::Debug for RsmqFunctions<T> {
 
 impl<T: ConnectionLike> RsmqFunctions<T> {
     /// Change the hidden time of a already sent message.
-    pub async fn change_message_visibility(
+    pub fn change_message_visibility(
         &self,
         conn: &mut T,
         qname: &str,
         message_id: &str,
-        hidden: Duration,
-    ) -> RsmqResult<()> {
-        let hidden = get_redis_duration(Some(hidden), &Duration::from_secs(30));
-
-        let queue = self.get_queue(conn, qname, false).await?;
-
-        number_in_range(hidden, 0, JS_COMPAT_MAX_TIME_MILLIS)?;
+        hidden: Duration,) -> RsmqResult<()> { let hidden = get_redis_duration(Some(hidden), &Duration::from_secs(30)); let queue = self.get_queue(conn, qname, false)?; number_in_range(hidden, 0, JS_COMPAT_MAX_TIME_MILLIS)?;
 
         CHANGE_MESSAGE_VISIVILITY
             .key(format!("{}{}", self.ns, qname))
             .key(message_id)
             .key(queue.ts + hidden)
-            .invoke_async::<_, bool>(conn)
-            .await?;
+            .invoke::<bool>(conn)?;
 
         Ok(())
     }
@@ -67,7 +60,7 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
     /// delay: Time the messages will be delayed before being delivered
     ///
     /// maxsize: Maximum size in bytes of each message in the queue. Needs to be between 1024 or 65536 or -1 (unlimited size)
-    pub async fn create_queue(
+    pub fn create_queue(
         &self,
         conn: &mut T,
         qname: &str,
@@ -91,7 +84,7 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
             }
         }
 
-        let time: (u64, u64) = redis::cmd("TIME").query_async(conn).await?;
+        let time: (u64, u64) = redis::cmd("TIME").query(conn)?;
 
         let results: Vec<bool> = pipe()
             .atomic()
@@ -123,8 +116,8 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
             .arg(&key)
             .arg("totalsent")
             .arg(0_i32)
-            .query_async(conn)
-            .await?;
+            .query(conn)
+            ?;
 
         if !results[0] {
             return Err(RsmqError::QueueExists);
@@ -133,8 +126,8 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
         redis::cmd("SADD")
             .arg(format!("{}QUEUES", self.ns))
             .arg(qname)
-            .query_async(conn)
-            .await?;
+            .query(conn)
+            ?;
 
         Ok(())
     }
@@ -142,7 +135,7 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
     /// Deletes a message from the queue.
     ///
     /// Important to use when you are using receive_message.
-    pub async fn delete_message(&self, conn: &mut T, qname: &str, id: &str) -> RsmqResult<bool> {
+    pub fn delete_message(&self, conn: &mut T, qname: &str, id: &str) -> RsmqResult<bool> {
         let key = format!("{}{}", self.ns, qname);
 
         let results: (u16, u16) = pipe()
@@ -155,8 +148,8 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
             .arg(id)
             .arg(format!("{}:rc", id))
             .arg(format!("{}:fr", id))
-            .query_async(conn)
-            .await?;
+            .query(conn)
+            ?;
 
         if results.0 == 1 && results.1 > 0 {
             return Ok(true);
@@ -166,7 +159,7 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
     }
 
     /// Deletes the queue and all the messages on it
-    pub async fn delete_queue(&self, conn: &mut T, qname: &str) -> RsmqResult<()> {
+    pub fn delete_queue(&self, conn: &mut T, qname: &str) -> RsmqResult<()> {
         let key = format!("{}{}", self.ns, qname);
 
         let results: (u16, u16) = pipe()
@@ -177,8 +170,8 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
             .cmd("SREM")
             .arg(format!("{}QUEUES", self.ns))
             .arg(qname)
-            .query_async(conn)
-            .await?;
+            .query(conn)
+            ?;
 
         if results.0 == 0 {
             return Err(RsmqError::QueueNotFound);
@@ -188,14 +181,14 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
     }
 
     /// Returns the queue attributes and statistics
-    pub async fn get_queue_attributes(
+    pub fn get_queue_attributes(
         &self,
         conn: &mut T,
         qname: &str,
     ) -> RsmqResult<RsmqQueueAttributes> {
         let key = format!("{}{}", self.ns, qname);
 
-        let time: (u64, u64) = redis::cmd("TIME").query_async(conn).await?;
+        let time: (u64, u64) = redis::cmd("TIME").query(conn)?;
 
         let result: (Vec<Option<i64>>, u64, u64) = pipe()
             .atomic()
@@ -214,8 +207,8 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
             .arg(&key)
             .arg(time.0)
             .arg("+inf")
-            .query_async(conn)
-            .await?;
+            .query(conn)
+            ?;
 
         let is_empty = result.0.contains(&None);
 
@@ -247,28 +240,28 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
     }
 
     /// Returns a list of queues in the namespace
-    pub async fn list_queues(&self, conn: &mut T) -> RsmqResult<Vec<String>> {
+    pub fn list_queues(&self, conn: &mut T) -> RsmqResult<Vec<String>> {
         let queues = redis::cmd("SMEMBERS")
             .arg(format!("{}QUEUES", self.ns))
-            .query_async(conn)
-            .await?;
+            .query(conn)
+            ?;
 
         Ok(queues)
     }
 
     /// Deletes and returns a message. Be aware that using this you may end with deleted & unprocessed messages.
-    pub async fn pop_message<E: TryFrom<RedisBytes, Error = Vec<u8>>>(
+    pub fn pop_message<E: TryFrom<RedisBytes, Error = Vec<u8>>>(
         &self,
         conn: &mut T,
         qname: &str,
     ) -> RsmqResult<Option<RsmqMessage<E>>> {
-        let queue = self.get_queue(conn, qname, false).await?;
+        let queue = self.get_queue(conn, qname, false)?;
 
         let result: (bool, String, Vec<u8>, u64, u64) = POP_MESSAGE
             .key(format!("{}{}", self.ns, qname))
             .key(queue.ts)
-            .invoke_async(conn)
-            .await?;
+            .invoke(conn)
+            ?;
 
         if !result.0 {
             return Ok(None);
@@ -288,13 +281,13 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
     /// Returns a message. The message stays hidden for some time (defined by "hidden"
     /// argument or the queue settings). After that time, the message will be redelivered.
     /// In order to avoid the redelivery, you need to use the "delete_message" after this function.
-    pub async fn receive_message<E: TryFrom<RedisBytes, Error = Vec<u8>>>(
+    pub fn receive_message<E: TryFrom<RedisBytes, Error = Vec<u8>>>(
         &self,
         conn: &mut T,
         qname: &str,
         hidden: Option<Duration>,
     ) -> RsmqResult<Option<RsmqMessage<E>>> {
-        let queue = self.get_queue(conn, qname, false).await?;
+        let queue = self.get_queue(conn, qname, false)?;
 
         let hidden = get_redis_duration(hidden, &queue.vt);
         number_in_range(hidden, 0, JS_COMPAT_MAX_TIME_MILLIS)?;
@@ -303,8 +296,8 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
             .key(format!("{}{}", self.ns, qname))
             .key(queue.ts)
             .key(queue.ts + hidden)
-            .invoke_async(conn)
-            .await?;
+            .invoke(conn)
+            ?;
 
         if !result.0 {
             return Ok(None);
@@ -322,14 +315,14 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
     }
 
     /// Sends a message to the queue. The message will be delayed some time (controlled by the "delayed" argument or the queue settings) before being delivered to a client.
-    pub async fn send_message<E: Into<RedisBytes>>(
+    pub fn send_message<E: Into<RedisBytes>>(
         &self,
         conn: &mut T,
         qname: &str,
         message: E,
         delay: Option<Duration>,
     ) -> RsmqResult<String> {
-        let queue = self.get_queue(conn, qname, true).await?;
+        let queue = self.get_queue(conn, qname, true)?;
 
         let delay = get_redis_duration(delay, &queue.delay);
         let key = format!("{}{}", self.ns, qname);
@@ -376,14 +369,14 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
             commands = commands.cmd("ZCARD").arg(&key);
         }
 
-        let result: Vec<i64> = commands.query_async(conn).await?;
+        let result: Vec<i64> = commands.query(conn)?;
 
         if self.realtime {
             redis::cmd("PUBLISH")
                 .arg(format!("{}:rt:{}", self.ns, qname))
                 .arg(result[3])
-                .query_async(conn)
-                .await?;
+                .query(conn)
+                ?;
         }
 
         Ok(queue_uid)
@@ -396,7 +389,7 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
     /// delay: Time the messages will be delayed before being delivered
     ///
     /// maxsize: Maximum size in bytes of each message in the queue. Needs to be between 1024 or 65536 or -1 (unlimited size)
-    pub async fn set_queue_attributes(
+    pub fn set_queue_attributes(
         &self,
         conn: &mut T,
         qname: &str,
@@ -404,11 +397,11 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
         delay: Option<Duration>,
         maxsize: Option<i64>,
     ) -> RsmqResult<RsmqQueueAttributes> {
-        self.get_queue(conn, qname, false).await?;
+        self.get_queue(conn, qname, false)?;
 
         let queue_name = format!("{}{}:Q", self.ns, qname);
 
-        let time: (u64, u64) = redis::cmd("TIME").query_async(conn).await?;
+        let time: (u64, u64) = redis::cmd("TIME").query(conn)?;
 
         let mut commands = &mut pipe();
 
@@ -453,12 +446,12 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
                 .arg(maxsize);
         }
 
-        commands.query_async(conn).await?;
+        commands.query(conn)?;
 
-        self.get_queue_attributes(conn, qname).await
+        self.get_queue_attributes(conn, qname)
     }
 
-    async fn get_queue(&self, conn: &mut T, qname: &str, uid: bool) -> RsmqResult<QueueDescriptor> {
+    fn get_queue(&self, conn: &mut T, qname: &str, uid: bool) -> RsmqResult<QueueDescriptor> {
         let result: (Vec<Option<String>>, (u64, u64)) = pipe()
             .atomic()
             .cmd("HMGET")
@@ -467,8 +460,7 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
             .arg("delay")
             .arg("maxsize")
             .cmd("TIME")
-            .query_async(conn)
-            .await?;
+            .query(conn)?;
 
         let time_millis = (result.1).0 * 1000;
 

@@ -4,12 +4,11 @@ use crate::RsmqResult;
 use core::convert::TryFrom;
 use std::time::Duration;
 
-#[async_trait::async_trait]
 pub trait RsmqConnection {
     /// Change the hidden time of a already sent message.
     ///
     /// `hidden` has a max time of 9_999_999 for compatibility reasons to this library JS version counterpart
-    async fn change_message_visibility(
+    fn change_message_visibility(
         &mut self,
         qname: &str,
         message_id: &str,
@@ -25,7 +24,7 @@ pub trait RsmqConnection {
     ///
     /// maxsize: Maximum size in bytes of each message in the queue. Needs to be between 1024 or 65536 or -1 (unlimited
     /// size)
-    async fn create_queue(
+    fn create_queue(
         &mut self,
         qname: &str,
         hidden: Option<Duration>,
@@ -36,19 +35,19 @@ pub trait RsmqConnection {
     /// Deletes a message from the queue.
     ///
     /// Important to use when you are using receive_message.
-    async fn delete_message(&mut self, qname: &str, id: &str) -> RsmqResult<bool>;
+    fn delete_message(&mut self, qname: &str, id: &str) -> RsmqResult<bool>;
 
     /// Deletes the queue and all the messages on it
-    async fn delete_queue(&mut self, qname: &str) -> RsmqResult<()>;
+    fn delete_queue(&mut self, qname: &str) -> RsmqResult<()>;
 
     /// Returns the queue attributes and statistics
-    async fn get_queue_attributes(&mut self, qname: &str) -> RsmqResult<RsmqQueueAttributes>;
+    fn get_queue_attributes(&mut self, qname: &str) -> RsmqResult<RsmqQueueAttributes>;
 
     /// Returns a list of queues in the namespace
-    async fn list_queues(&mut self) -> RsmqResult<Vec<String>>;
+    fn list_queues(&mut self) -> RsmqResult<Vec<String>>;
 
     /// Deletes and returns a message. Be aware that using this you may end with deleted & unprocessed messages.
-    async fn pop_message<E: TryFrom<RedisBytes, Error = Vec<u8>>>(
+    fn pop_message<E: TryFrom<RedisBytes, Error = Vec<u8>>>(
         &mut self,
         qname: &str,
     ) -> RsmqResult<Option<RsmqMessage<E>>>;
@@ -58,7 +57,7 @@ pub trait RsmqConnection {
     /// the "delete_message" after this function.
     ///
     /// `hidden` has a max time of 9_999_999 for compatibility reasons to this library JS version counterpart.
-    async fn receive_message<E: TryFrom<RedisBytes, Error = Vec<u8>>>(
+    fn receive_message<E: TryFrom<RedisBytes, Error = Vec<u8>>>(
         &mut self,
         qname: &str,
         hidden: Option<Duration>,
@@ -66,7 +65,7 @@ pub trait RsmqConnection {
 
     /// Sends a message to the queue. The message will be delayed some time (controlled by the "delayed" argument or
     /// the queue settings) before being delivered to a client.
-    async fn send_message<E: Into<RedisBytes> + Send>(
+    fn send_message<E: Into<RedisBytes> + Send>(
         &mut self,
         qname: &str,
         message: E,
@@ -83,7 +82,7 @@ pub trait RsmqConnection {
     ///
     /// maxsize: Maximum size in bytes of each message in the queue. Needs to be between 1024 or 65536 or -1 (unlimited
     /// size)
-    async fn set_queue_attributes(
+    fn set_queue_attributes(
         &mut self,
         qname: &str,
         hidden: Option<Duration>,
