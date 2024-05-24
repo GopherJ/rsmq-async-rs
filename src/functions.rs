@@ -17,6 +17,8 @@ lazy_static! {
     static ref POP_MESSAGE: Script = Script::new(include_str!("./redis-scripts/popMessage.lua"));
     static ref RECEIVE_MESSAGE: Script =
         Script::new(include_str!("./redis-scripts/receiveMessage.lua"));
+    static ref SEND_MESSAGE: Script =
+        Script::new(include_str!("./redis-scripts/sendMessage.lua"));
 }
 
 static JS_COMPAT_MAX_TIME_MILLIS: u64 = 9_999_999_000;
@@ -325,7 +327,6 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
         let queue = self.get_queue(conn, qname, true)?;
 
         let delay = get_redis_duration(delay, &queue.delay);
-        let key = format!("{}{}", self.ns, qname);
 
         number_in_range(delay, 0, JS_COMPAT_MAX_TIME_MILLIS)?;
 
@@ -346,38 +347,14 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
             None => return Err(RsmqError::QueueNotFound),
         };
 
-        let queue_key = format!("{}:Q", key);
-
-        let mut piping = pipe();
-
-        let mut commands = piping
-            .atomic()
-            .cmd("ZADD")
-            .arg(&key)
-            .arg(queue.ts + delay)
-            .arg(&queue_uid)
-            .cmd("HSET")
-            .arg(&queue_key)
-            .arg(&queue_uid)
-            .arg(message.0)
-            .cmd("HINCRBY")
-            .arg(&queue_key)
-            .arg("totalsent")
-            .arg(1_u64);
-
-        if self.realtime {
-            commands = commands.cmd("ZCARD").arg(&key);
-        }
-
-        let result: Vec<i64> = commands.query(conn)?;
-
-        if self.realtime {
-            redis::cmd("PUBLISH")
-                .arg(format!("{}:rt:{}", self.ns, qname))
-                .arg(result[3])
-                .query(conn)
-                ?;
-        }
+        SEND_MESSAGE
+            .key(&self.ns)
+            .key(qname)
+            .key(queue.ts + delay)
+            .key(&queue_uid)
+            .key(message.0)
+            .key(self.realtime)
+            .invoke(conn)?;
 
         Ok(queue_uid)
     }

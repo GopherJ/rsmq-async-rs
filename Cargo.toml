@@ -1,22 +1,23 @@
 [package]
-name = "rsmq"
-version = "9.0.0"
+name = "rsmq-sync"
+version = "1.0.0"
 authors = [
-    "David Bonet <webbonet@gmail.com>"
+    "David Bonet <webbonet@gmail.com>",
+    "CJ <cocathecafe@gmail.com>"
 ]
 edition = "2021"
 license = "MIT"
-description = "Async RSMQ port to rust. RSMQ is a simple redis queue system that works in any redis v2.4+. It contains the same methods as the original one in https://github.com/smrchy/rsmq"
-homepage = "https://crates.io/crates/rsmq_async"
-repository = "https://github.com/Couragium/rsmq-async-rs"
-documentation = "https://docs.rs/rsmq_async/"
+description = "RSMQ port to rust. RSMQ is a simple redis queue system that works in any redis v2.4+. It contains the same methods as the original one in https://github.com/smrchy/rsmq"
+homepage = "https://crates.io/crates/rsmq_sync"
+repository = "https://github.com/GopherJ/rsmq-sync"
+documentation = "https://docs.rs/rsmq_sync/"
 readme = "README.md"
 
 [dependencies]
 lazy_static = "^1"
 rand = "^0.8"
 radix_fmt = "^1"
-r2d2 = { git = "https://github.com/GopherJ/r2d2", rev = "976ca74a74871d78764da2a040edcadad1af9be9" }
+r2d2 = { version = "^0.8" }
 thiserror = "^1"
 redis = { version = "^0.25", default-features = false, features = ["acl", "keep-alive", "script"] }
 

@@ -1,17 +1,17 @@
-//! # RSMQ in async Rust
+//! # RSMQ in Rust
 //!
-//! RSMQ port to async rust. RSMQ is a simple redis queue system that works in any redis v2.6+. It contains the same
+//! RSMQ port to rust. RSMQ is a simple redis queue system that works in any redis v2.6+. It contains the same
 //! methods as the original one in [https://github.com/smrchy/rsmq](https://github.com/smrchy/rsmq)
 //!
 //! [![Crates.io](https://img.shields.io/crates/v/rsmq)](https://crates.io/crates/rsmq)
 //! [![Crates.io](https://img.shields.io/crates/l/rsmq)](https://choosealicense.com/licenses/mit/)
-//! [![dependency status](https://deps.rs/crate/rsmq/4.0.0/status.svg)](https://deps.rs/crate/rsmq)
-//! [![Docs](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square)](https://docs.rs/rsmq)
+//! [![dependency status](https://deps.rs/crate/rsmq/4.0.0/status.svg)](https://deps.rs/crate/rsmq_sync)
+//! [![Docs](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square)](https://docs.rs/rsmq_sync)
 //!
 //! ## Example
 //!
 //! ```rust
-//! # use rsmq::RsmqError; use rsmq::{Rsmq, RsmqConnection};
+//! # use rsmq_sync::RsmqError; use rsmq_sync::{Rsmq, RsmqConnection};
 //!
 //! # async fn it_works() -> Result<(), RsmqError> { let mut rsmq = Rsmq::new(Default::default())?;
 //!
@@ -30,13 +30,13 @@
 //!
 //! ## Installation
 //!
-//! Check [https://crates.io/crates/rsmq](https://crates.io/crates/rsmq)
+//! Check [https://crates.io/crates/rsmq](https://crates.io/crates/rsmq_sync)
 //!
 //! ## Example
 //!
 //! ```rust
 //!
-//! use rsmq::{Rsmq, RsmqConnection};
+//! use rsmq_sync::{Rsmq, RsmqConnection};
 //!
 //! async fn it_works() { let mut rsmq = Rsmq::new(Default::default())
 //!         .expect("connection failed");
@@ -79,19 +79,6 @@
 //! as the normal Rsmq.
 //!
 //! If you want to accept any of both implementation, just accept the trait [`RsmqConnection`]
-//!
-//! ## Executor compatibility
-//!
-//! By default it will intruct redis-rs library to enable async-std and tokio compatibility and choose Tokio
-//! if Tokio is avaialble, async-std if not. If you want to choose, you can change the `Cargo.toml` definition to
-//!
-//! ```toml
-//!
-//! rsmq = { version = "9", default-features = false, features = ["tokio-comp"] }
-//!
-//! ```
-//!
-//! Where `"tokio-comp"` can also be `"async-std-comp"`.
 //!
 //! ## `Rsmq` vs `PooledRsmq`
 //!

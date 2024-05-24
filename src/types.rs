@@ -98,7 +98,7 @@ pub struct RsmqQueueAttributes {
 ///
 /// ```rust,ignore
 /// use std::convert::TryFrom;
-/// use rsmq_async::RedisBytes;
+/// use rsmq_sync::RedisBytes;
 ///  
 /// impl TryFrom<RedisBytes> for String {
 ///     type Error = Vec<u8>;

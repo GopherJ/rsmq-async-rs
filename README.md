@@ -10,16 +10,16 @@ This crate uses async in the implementation. If you want to use it in your sync
 code you can use tokio/async_std "block_on" method. Async was used in order to
 simplify the code and allow 1-to-1 port oft he JS code.
 
-[![Crates.io](https://img.shields.io/crates/v/rsmq_async)](https://crates.io/crates/rsmq_async)
-[![Crates.io](https://img.shields.io/crates/l/rsmq_async)](https://choosealicense.com/licenses/mit/)
-[![dependency status](https://deps.rs/crate/rsmq_async/latest/status.svg)](https://deps.rs/crate/rsmq_async)
-[![Docs](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square)](https://docs.rs/rsmq_async)
+[![Crates.io](https://img.shields.io/crates/v/rsmq_sync)](https://crates.io/crates/rsmq_sync)
+[![Crates.io](https://img.shields.io/crates/l/rsmq_sync)](https://choosealicense.com/licenses/mit/)
+[![dependency status](https://deps.rs/crate/rsmq_sync/latest/status.svg)](https://deps.rs/crate/rsmq_sync)
+[![Docs](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square)](https://docs.rs/rsmq_sync)
 
 ## Example
 
 ```rust,no_run
 
-use rsmq_async::{Rsmq, RsmqError, RsmqConnection};
+use rsmq_sync::{Rsmq, RsmqError, RsmqConnection};
 
 let mut rsmq = Rsmq::new(Default::default()).await?;
 
@@ -39,13 +39,13 @@ methods. Make sure you always import the trait <a href="trait.RsmqConnection.htm
 
 ## Installation
 
-Check [https://crates.io/crates/rsmq_async](https://crates.io/crates/rsmq_async)
+Check [https://crates.io/crates/rsmq_sync](https://crates.io/crates/rsmq_sync)
 
 
 ## Example
 
 ```rust,no_run
-use rsmq_async::{Rsmq, RsmqConnection};
+use rsmq_sync::{Rsmq, RsmqConnection};
 
 async fn it_works() {
     let mut rsmq = Rsmq::new(Default::default())

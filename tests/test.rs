@@ -1,6 +1,6 @@
 mod support;
 
-use rsmq::{RedisBytes, Rsmq, RsmqConnection, RsmqError};
+use rsmq_sync::{RedisBytes, Rsmq, RsmqConnection, RsmqError};
 use std::{convert::TryFrom, time::Duration};
 use support::*;
 
@@ -15,28 +15,26 @@ fn send_receiving_deleting_message() {
 
         rsmq.create_queue("queue1", None, None, None).unwrap();
 
-        rsmq.send_message("queue1", "testmessage", None)
+        rsmq.send_message("queue1", "testmessage1", None)
 
             .unwrap();
 
-        let message = rsmq
-            .receive_message::<String>("queue1", None)
+        tokio::time::sleep(Duration::from_secs(1)).await;
 
-            .unwrap();
-        assert!(message.is_some());
-
-        let message = message.unwrap();
-
-        rsmq.delete_message("queue1", &message.id).unwrap();
-
-        assert_eq!(message.message, "testmessage".to_string());
-
-        let message = rsmq
-            .receive_message::<String>("queue1", None)
+        rsmq.send_message("queue1", "testmessage2", None)
 
             .unwrap();
 
-        assert!(message.is_none());
+        let message1 = rsmq
+            .pop_message::<String>("queue1")
+
+            .unwrap();
+        let message2 = rsmq
+            .pop_message::<String>("queue1")
+
+            .unwrap();
+        assert_eq!(message1.map(|x| x.message).unwrap(), String::from("testmessage1"));
+        assert_eq!(message2.map(|x| x.message).unwrap(), String::from("testmessage2"));
         rsmq.delete_queue("queue1").unwrap();
     })
 }
