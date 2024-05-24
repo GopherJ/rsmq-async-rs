@@ -15,13 +15,13 @@ fn send_receiving_deleting_message() {
 
         rsmq.create_queue("queue1", None, None, None).unwrap();
 
-        rsmq.send_message("queue1", "testmessage1", None)
+        rsmq.send_message("queue1", vec!["testmessage1"], None)
 
             .unwrap();
 
         tokio::time::sleep(Duration::from_secs(1)).await;
 
-        rsmq.send_message("queue1", "testmessage2", None)
+        rsmq.send_message("queue1", vec!["testmessage2"], None)
 
             .unwrap();
 
@@ -50,7 +50,7 @@ fn send_receiving_delayed_message() {
 
         rsmq.create_queue("queue1", None, None, None).unwrap();
 
-        rsmq.send_message("queue1", "testmessage", Some(Duration::from_secs(2)))
+        rsmq.send_message("queue1", vec!["testmessage"], Some(Duration::from_secs(2)))
 
             .unwrap();
 
@@ -109,7 +109,7 @@ fn send_receiving_deleting_message_vec_u8() {
 
         rsmq.create_queue("queue1", None, None, None).unwrap();
 
-        rsmq.send_message("queue1", "testmessage", None)
+        rsmq.send_message("queue1", vec!["testmessage"], None)
 
             .unwrap();
 
@@ -157,7 +157,7 @@ fn send_receiving_deleting_message_custom_type() {
 
         rsmq.create_queue("queue1", None, None, None).unwrap();
 
-        rsmq.send_message("queue1", b"testmessage".to_owned().to_vec(), None)
+        rsmq.send_message("queue1", vec![b"testmessage".to_owned().to_vec()], None)
 
             .unwrap();
 
@@ -194,7 +194,7 @@ fn pop_message() {
 
         rsmq.create_queue("queue2", None, None, None).unwrap();
 
-        rsmq.send_message("queue2", "testmessage", None)
+        rsmq.send_message("queue2", vec!["testmessage"], None)
 
             .unwrap();
 
@@ -225,7 +225,7 @@ fn pop_message_vec_u8() {
 
         rsmq.create_queue("queue2", None, None, None).unwrap();
 
-        rsmq.send_message("queue2", "testmessage", None)
+        rsmq.send_message("queue2", vec!["testmessage"], None)
 
             .unwrap();
 
@@ -388,7 +388,7 @@ fn change_message_visibility() {
 
         rsmq.create_queue("queue6", None, None, None).unwrap();
 
-        rsmq.send_message("queue6", "testmessage", None)
+        rsmq.send_message("queue6", vec!["testmessage"], None)
 
             .unwrap();
 

@@ -7,7 +7,7 @@ use core::convert::TryFrom;
 use lazy_static::lazy_static;
 use radix_fmt::radix_36;
 use rand::seq::IteratorRandom;
-use redis::{ConnectionLike, pipe, Script};
+use redis::{pipe, ConnectionLike, Script};
 use std::convert::TryInto;
 use std::time::Duration;
 
@@ -17,8 +17,7 @@ lazy_static! {
     static ref POP_MESSAGE: Script = Script::new(include_str!("./redis-scripts/popMessage.lua"));
     static ref RECEIVE_MESSAGE: Script =
         Script::new(include_str!("./redis-scripts/receiveMessage.lua"));
-    static ref SEND_MESSAGE: Script =
-        Script::new(include_str!("./redis-scripts/sendMessage.lua"));
+    static ref SEND_MESSAGE: Script = Script::new(include_str!("./redis-scripts/sendMessage.lua"));
 }
 
 static JS_COMPAT_MAX_TIME_MILLIS: u64 = 9_999_999_000;
@@ -44,7 +43,11 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
         conn: &mut T,
         qname: &str,
         message_id: &str,
-        hidden: Duration,) -> RsmqResult<()> { let hidden = get_redis_duration(Some(hidden), &Duration::from_secs(30)); let queue = self.get_queue(conn, qname, false)?; number_in_range(hidden, 0, JS_COMPAT_MAX_TIME_MILLIS)?;
+        hidden: Duration,
+    ) -> RsmqResult<()> {
+        let hidden = get_redis_duration(Some(hidden), &Duration::from_secs(30));
+        let queue = self.get_queue(conn, qname, 0)?;
+        number_in_range(hidden, 0, JS_COMPAT_MAX_TIME_MILLIS)?;
 
         CHANGE_MESSAGE_VISIVILITY
             .key(format!("{}{}", self.ns, qname))
@@ -118,8 +121,7 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
             .arg(&key)
             .arg("totalsent")
             .arg(0_i32)
-            .query(conn)
-            ?;
+            .query(conn)?;
 
         if !results[0] {
             return Err(RsmqError::QueueExists);
@@ -128,8 +130,7 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
         redis::cmd("SADD")
             .arg(format!("{}QUEUES", self.ns))
             .arg(qname)
-            .query(conn)
-            ?;
+            .query(conn)?;
 
         Ok(())
     }
@@ -150,8 +151,7 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
             .arg(id)
             .arg(format!("{}:rc", id))
             .arg(format!("{}:fr", id))
-            .query(conn)
-            ?;
+            .query(conn)?;
 
         if results.0 == 1 && results.1 > 0 {
             return Ok(true);
@@ -172,8 +172,7 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
             .cmd("SREM")
             .arg(format!("{}QUEUES", self.ns))
             .arg(qname)
-            .query(conn)
-            ?;
+            .query(conn)?;
 
         if results.0 == 0 {
             return Err(RsmqError::QueueNotFound);
@@ -209,8 +208,7 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
             .arg(&key)
             .arg(time.0)
             .arg("+inf")
-            .query(conn)
-            ?;
+            .query(conn)?;
 
         let is_empty = result.0.contains(&None);
 
@@ -245,8 +243,7 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
     pub fn list_queues(&self, conn: &mut T) -> RsmqResult<Vec<String>> {
         let queues = redis::cmd("SMEMBERS")
             .arg(format!("{}QUEUES", self.ns))
-            .query(conn)
-            ?;
+            .query(conn)?;
 
         Ok(queues)
     }
@@ -257,19 +254,18 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
         conn: &mut T,
         qname: &str,
     ) -> RsmqResult<Option<RsmqMessage<E>>> {
-        let queue = self.get_queue(conn, qname, false)?;
+        let queue = self.get_queue(conn, qname, 0)?;
 
-        let result: (bool, String, Vec<u8>, u64, u64) = POP_MESSAGE
+        let result: (bool, String, String, u64, u64) = POP_MESSAGE
             .key(format!("{}{}", self.ns, qname))
             .key(queue.ts)
-            .invoke(conn)
-            ?;
+            .invoke(conn)?;
 
         if !result.0 {
             return Ok(None);
         }
 
-        let message = E::try_from(RedisBytes(result.2)).map_err(RsmqError::CannotDecodeMessage)?;
+        let message = E::try_from(RedisBytes(hex::decode(result.2).unwrap())).map_err(RsmqError::CannotDecodeMessage)?;
 
         Ok(Some(RsmqMessage {
             id: result.1.clone(),
@@ -289,23 +285,24 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
         qname: &str,
         hidden: Option<Duration>,
     ) -> RsmqResult<Option<RsmqMessage<E>>> {
-        let queue = self.get_queue(conn, qname, false)?;
+        let queue = self.get_queue(conn, qname, 0)?;
 
         let hidden = get_redis_duration(hidden, &queue.vt);
         number_in_range(hidden, 0, JS_COMPAT_MAX_TIME_MILLIS)?;
 
-        let result: (bool, String, Vec<u8>, u64, u64) = RECEIVE_MESSAGE
+        let result: (bool, String, String, u64, u64) = RECEIVE_MESSAGE
             .key(format!("{}{}", self.ns, qname))
             .key(queue.ts)
             .key(queue.ts + hidden)
-            .invoke(conn)
-            ?;
+            .invoke(conn)?;
+
+        dbg!(&result.2);
 
         if !result.0 {
             return Ok(None);
         }
 
-        let message = E::try_from(RedisBytes(result.2)).map_err(RsmqError::CannotDecodeMessage)?;
+        let message = E::try_from(RedisBytes(hex::decode(result.2).unwrap())).map_err(RsmqError::CannotDecodeMessage)?;
 
         Ok(Some(RsmqMessage {
             id: result.1.clone(),
@@ -321,42 +318,45 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
         &self,
         conn: &mut T,
         qname: &str,
-        message: E,
+        messages: Vec<E>,
         delay: Option<Duration>,
-    ) -> RsmqResult<String> {
-        let queue = self.get_queue(conn, qname, true)?;
+    ) -> RsmqResult<Vec<String>> {
+        let queue = self.get_queue(conn, qname, messages.len())?;
 
         let delay = get_redis_duration(delay, &queue.delay);
 
         number_in_range(delay, 0, JS_COMPAT_MAX_TIME_MILLIS)?;
 
-        let message: RedisBytes = message.into();
+        let messages: Vec<RedisBytes> =
+            messages.into_iter().map(|message| message.into()).collect();
 
-        let msg_len: i64 = message
-            .0
-            .len()
-            .try_into()
-            .map_err(|_| RsmqError::MessageTooLong)?;
+        let messages = messages
+            .into_iter()
+            .map(|message| {
+                let msg_len: i64 = message
+                    .0
+                    .len()
+                    .try_into()
+                    .unwrap();
 
-        if queue.maxsize != -1 && msg_len > queue.maxsize {
-            return Err(RsmqError::MessageTooLong);
-        }
+                // if queue.maxsize != -1 && msg_len > queue.maxsize {
+                //     return Err(RsmqError::MessageTooLong);
+                // }
 
-        let queue_uid = match queue.uid {
-            Some(uid) => uid,
-            None => return Err(RsmqError::QueueNotFound),
-        };
+                hex::encode(message.0)
+            })
+            .collect::<Vec<_>>();
 
         SEND_MESSAGE
             .key(&self.ns)
             .key(qname)
             .key(queue.ts + delay)
-            .key(&queue_uid)
-            .key(message.0)
+            .key(serde_json::to_string(&queue.uids).unwrap())
+            .key(serde_json::to_string(&messages).unwrap())
             .key(self.realtime)
             .invoke(conn)?;
 
-        Ok(queue_uid)
+        Ok(queue.uids)
     }
 
     /// Modify the queue attributes. Keep in mind that "hidden" and "delay" can be overwritten when the message is sent. "hidden" can be changed by the method "change_message_visibility"
@@ -374,7 +374,7 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
         delay: Option<Duration>,
         maxsize: Option<i64>,
     ) -> RsmqResult<RsmqQueueAttributes> {
-        self.get_queue(conn, qname, false)?;
+        self.get_queue(conn, qname, 0)?;
 
         let queue_name = format!("{}{}:Q", self.ns, qname);
 
@@ -428,7 +428,7 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
         self.get_queue_attributes(conn, qname)
     }
 
-    fn get_queue(&self, conn: &mut T, qname: &str, uid: bool) -> RsmqResult<QueueDescriptor> {
+    fn get_queue(&self, conn: &mut T, qname: &str, num_uids: usize) -> RsmqResult<QueueDescriptor> {
         let result: (Vec<Option<String>>, (u64, u64)) = pipe()
             .atomic()
             .cmd("HMGET")
@@ -447,11 +447,10 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
                 _ => return Err(RsmqError::QueueNotFound),
             };
 
-        let quid = if uid {
-            Some(radix_36(time_millis).to_string() + &RsmqFunctions::<T>::make_id(22)?)
-        } else {
-            None
-        };
+        let mut uids = Vec::with_capacity(num_uids);
+        for _ in 0..num_uids {
+            uids.push(radix_36(time_millis).to_string() + &RsmqFunctions::<T>::make_id(22)?);
+        }
 
         Ok(QueueDescriptor {
             vt: Duration::from_millis(hmget_first.parse().map_err(|_| RsmqError::CannotParseVT)?),
@@ -464,7 +463,7 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
                 .parse()
                 .map_err(|_| RsmqError::CannotParseMaxsize)?,
             ts: time_millis,
-            uid: quid,
+            uids,
         })
     }
 

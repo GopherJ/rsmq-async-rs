@@ -44,7 +44,7 @@
 //!     rsmq.create_queue("myqueue", None, None, None)
 //!         .expect("failed to create queue");
 //!
-//!     rsmq.send_message("myqueue", "testmessage", None)
+//!     rsmq.send_message("myqueue", vec!["testmessage"], None)
 //!         .expect("failed to send message");
 //!
 //!     let message = rsmq

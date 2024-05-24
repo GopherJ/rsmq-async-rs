@@ -1,19 +1,26 @@
 local ns = KEYS[1]
 local qname = KEYS[2]
 local ts_delay = tonumber(KEYS[3])
-local queue_uid = KEYS[4]
-local message = KEYS[5]
+local queue_uids = cjson.decode(KEYS[4])
+local messages = cjson.decode(KEYS[5])
 local realtime = tonumber(KEYS[6])
 
-redis.call('ZADD', ns .. qname, ts_delay, queue_uid)
+local key = ns .. qname
+local queue_key = ns .. qname .. ':Q'
+local realtime_key = ns .. ':rt:' .. qname
 
-redis.call('HSET', ns .. qname .. ':Q', queue_uid, message)
+for i = 1, #queue_uids do
 
-local result = redis.call('HINCRBY', ns .. qname .. ':Q', 'totalsent', 1)
+redis.call('ZADD', key, ts_delay, queue_uids[i])
+redis.call('HSET', queue_key, queue_uids[i], messages[i])
+
+end
+
+local result = redis.call('HINCRBY', queue_key, 'totalsent', #queue_uids)
 
 if realtime == 1 then
-    result = redis.call('ZCARD', ns .. qname)
-    redis.call('PUBLISH', ns .. ':rt:' .. qname, result)
+    result = redis.call('ZCARD', key)
+    redis.call('PUBLISH', realtime_key, result)
 end
 
 return result

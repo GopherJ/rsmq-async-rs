@@ -183,13 +183,13 @@ impl RsmqConnection for PooledRsmq {
     fn send_message<E: Into<RedisBytes> + Send>(
         &mut self,
         qname: &str,
-        message: E,
+        messages: Vec<E>,
         delay: Option<Duration>,
-    ) -> RsmqResult<String> {
+    ) -> RsmqResult<Vec<String>> {
         let mut conn = self.pool.get()?;
 
         self.functions
-            .send_message(&mut conn, qname, message, delay)
+            .send_message(&mut conn, qname, messages, delay)
     }
 
     fn set_queue_attributes(

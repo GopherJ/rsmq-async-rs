@@ -6,7 +6,7 @@ pub(crate) struct QueueDescriptor {
     pub delay: Duration,
     pub maxsize: i64,
     pub ts: u64,
-    pub uid: Option<String>,
+    pub uids: Vec<String>,
 }
 
 /// Options for creating a new RSMQ instance.
@@ -99,7 +99,7 @@ pub struct RsmqQueueAttributes {
 /// ```rust,ignore
 /// use std::convert::TryFrom;
 /// use rsmq_sync::RedisBytes;
-///  
+///
 /// impl TryFrom<RedisBytes> for String {
 ///     type Error = Vec<u8>;
 ///

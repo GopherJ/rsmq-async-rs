@@ -120,11 +120,11 @@ impl RsmqConnection for Rsmq {
     fn send_message<E: Into<RedisBytes> + Send>(
         &mut self,
         qname: &str,
-        message: E,
+        messages: Vec<E>,
         delay: Option<Duration>,
-    ) -> RsmqResult<String> {
+    ) -> RsmqResult<Vec<String>> {
         self.functions
-            .send_message(&mut self.connection.0, qname, message, delay)
+            .send_message(&mut self.connection.0, qname, messages, delay)
     }
 
     fn set_queue_attributes(

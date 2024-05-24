@@ -68,9 +68,9 @@ pub trait RsmqConnection {
     fn send_message<E: Into<RedisBytes> + Send>(
         &mut self,
         qname: &str,
-        message: E,
+        messages: Vec<E>,
         delay: Option<Duration>,
-    ) -> RsmqResult<String>;
+    ) -> RsmqResult<Vec<String>>;
 
     /// Modify the queue attributes. Keep in mind that "hidden" and "delay" can be overwritten when the message
     /// is sent. "hidden" can be changed by the method "change_message_visibility"
