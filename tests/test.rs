@@ -447,3 +447,38 @@ fn change_queue_size() {
         assert_eq!(attributes.maxsize, -1);
     })
 }
+
+
+#[test]
+fn sent_messages_must_keep_order() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+
+    rt.block_on(async move {
+        let ctx = TestContext::new();
+        let connection = ctx.async_connection().unwrap();
+        let mut rsmq = Rsmq::new_with_client(connection, false, None);
+
+        rsmq.create_queue("queue1", None, None, None).unwrap();
+
+        for i in 0..10000 {
+            rsmq.send_message("queue1", format!("testmessage{}", i), None)
+                .unwrap();
+        }
+
+        for i in 0..10000 {
+            let message = rsmq
+                .receive_message::<String>("queue1", None)
+                .unwrap().unwrap();
+            assert_eq!(message.message, format!("testmessage{}", i));
+
+            rsmq.delete_message("queue1", &message.id).unwrap();
+        }
+
+        let message = rsmq
+            .receive_message::<String>("queue1", None)
+            .unwrap();
+
+        assert!(message.is_none());
+        rsmq.delete_queue("queue1").unwrap();
+    })
+}

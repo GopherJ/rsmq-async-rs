@@ -19,7 +19,7 @@ lazy_static! {
         Script::new(include_str!("./redis-scripts/receiveMessage.lua"));
 }
 
-static JS_COMPAT_MAX_TIME_MILLIS: u64 = 9_999_999_000;
+const JS_COMPAT_MAX_TIME_MILLIS: u64 = 9_999_999_000;
 
 /// The main object of this library. Creates/Handles the redis connection and contains all the methods
 #[derive(Clone)]
@@ -205,7 +205,7 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
             .arg(&key)
             .cmd("ZCOUNT")
             .arg(&key)
-            .arg(time.0)
+            .arg(time.0 * 1000)
             .arg("+inf")
             .query(conn)
             ?;
@@ -462,7 +462,7 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
             .cmd("TIME")
             .query(conn)?;
 
-        let time_millis = (result.1).0 * 1000;
+        let time_micros = (result.1).0 * 1000000 + (result.1).1;
 
         let (hmget_first, hmget_second, hmget_third) =
             match (result.0.first(), result.0.get(1), result.0.get(2)) {
@@ -471,7 +471,7 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
             };
 
         let quid = if uid {
-            Some(radix_36(time_millis).to_string() + &RsmqFunctions::<T>::make_id(22)?)
+            Some(radix_36(time_micros).to_string() + &RsmqFunctions::<T>::make_id(22)?)
         } else {
             None
         };
@@ -486,7 +486,7 @@ impl<T: ConnectionLike> RsmqFunctions<T> {
             maxsize: hmget_third
                 .parse()
                 .map_err(|_| RsmqError::CannotParseMaxsize)?,
-            ts: time_millis,
+            ts: time_micros / 1000,
             uid: quid,
         })
     }
